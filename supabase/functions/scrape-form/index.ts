@@ -47,7 +47,7 @@ serve(async (req) => {
         url: formattedUrl,
         formats: ["markdown", "html"],
         onlyMainContent: true,
-        waitFor: 3000, // Wait for form to load
+        waitFor: 3000,
       }),
     });
 
@@ -61,14 +61,15 @@ serve(async (req) => {
       );
     }
 
-    // Extract questions from the scraped content
     const markdown = data.data?.markdown || data.markdown || "";
     const html = data.data?.html || data.html || "";
     
     console.log("Scraped content length:", markdown.length);
+    console.log("Raw markdown preview:", markdown.substring(0, 500));
 
     // Parse questions from the form content
     const questions = parseGoogleFormQuestions(markdown, html);
+    console.log("Parsed questions:", JSON.stringify(questions, null, 2));
 
     return new Response(
       JSON.stringify({ 
@@ -96,104 +97,172 @@ interface ParsedQuestion {
   required?: boolean;
 }
 
+// List of patterns to IGNORE (Google Form UI elements)
+const IGNORE_PATTERNS = [
+  /^sign in/i,
+  /^login/i,
+  /save your progress/i,
+  /indicates required/i,
+  /your answer/i,
+  /clear form/i,
+  /submit/i,
+  /next/i,
+  /back/i,
+  /previous/i,
+  /never submit passwords/i,
+  /this content is neither created/i,
+  /terms of service/i,
+  /privacy policy/i,
+  /does this form look suspicious/i,
+  /report/i,
+  /google forms/i,
+  /help and feedback/i,
+  /contact form owner/i,
+  /help forms improve/i,
+  /^\[.*\]\(http/i, // Markdown links
+  /^!\[.*\]\(/i, // Markdown images
+  /^\*$/,
+  /^\\+$/,
+  /^-$/,
+];
+
+function shouldIgnoreLine(line: string): boolean {
+  const trimmed = line.trim().toLowerCase();
+  
+  // Too short
+  if (trimmed.length < 3) return true;
+  
+  // Check against ignore patterns
+  for (const pattern of IGNORE_PATTERNS) {
+    if (pattern.test(line)) return true;
+  }
+  
+  // Contains only special characters
+  if (/^[\s\*\-\\_\[\]\(\)]+$/.test(trimmed)) return true;
+  
+  return false;
+}
+
 function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestion[] {
   const questions: ParsedQuestion[] = [];
-  
-  // Split by common patterns that indicate new questions
   const lines = markdown.split("\n");
-  let currentQuestion: Partial<ParsedQuestion> | null = null;
-  let questionCount = 0;
   
-  for (let i = 0; i < lines.length; i++) {
+  let questionCount = 0;
+  let i = 0;
+  
+  while (i < lines.length) {
     const line = lines[i].trim();
     
-    if (!line) continue;
-    
-    // Skip common non-question elements
-    if (line.includes("Submit") || 
-        line.includes("Clear form") || 
-        line.includes("Never submit passwords") ||
-        line.includes("This form was created") ||
-        line.includes("Google Forms") ||
-        line.startsWith("*") && line.length < 5) {
+    // Skip empty or ignored lines
+    if (!line || shouldIgnoreLine(line)) {
+      i++;
       continue;
     }
     
-    // Check if this looks like a question header (often bold or has asterisk for required)
-    const isRequired = line.includes("*") || line.includes("(wajib)") || line.includes("(required)");
-    const cleanLine = line.replace(/\*/g, "").replace(/\(wajib\)/gi, "").replace(/\(required\)/gi, "").trim();
+    // Clean the line
+    let cleanedLine = line
+      .replace(/\\\*/g, "*") // Unescape asterisks
+      .replace(/\s*\*\s*$/, "") // Remove trailing asterisk (required marker)
+      .replace(/^\*\s*/, "") // Remove leading asterisk
+      .replace(/^#+\s*/, "") // Remove markdown headers
+      .trim();
     
-    // If line ends with question mark or is followed by options, it's likely a question
-    const isLikelyQuestion = cleanLine.endsWith("?") || 
-                            cleanLine.endsWith(":") ||
-                            (cleanLine.length > 10 && cleanLine.length < 500);
+    // Check if this looks like a required field (has asterisk at end)
+    const isRequired = line.includes("*") || line.includes("\\*");
     
-    // Check if next lines look like options (bullet points, letters, or short lines)
-    const nextLines = lines.slice(i + 1, i + 10);
-    const hasOptions = nextLines.some(nl => {
-      const trimmed = nl.trim();
-      return trimmed.match(/^[-•○●]\s/) || // Bullet points
-             trimmed.match(/^[a-e][.)]\s/i) || // Letter options
-             (trimmed.length > 0 && trimmed.length < 100 && !trimmed.endsWith("?"));
-    });
+    // Skip if still too short after cleaning
+    if (cleanedLine.length < 3) {
+      i++;
+      continue;
+    }
     
-    // If current line looks like a question
-    if (cleanLine.length > 5 && isLikelyQuestion && !cleanLine.match(/^[-•○●a-e][.)]/i)) {
-      // Save previous question if exists
-      if (currentQuestion && currentQuestion.question) {
-        questionCount++;
-        questions.push({
-          id: `q${questionCount}`,
-          question: currentQuestion.question,
-          type: currentQuestion.options?.length ? "multiple_choice" : "text",
-          options: currentQuestion.options,
-          required: currentQuestion.required,
-        });
+    // Skip if it's a known UI element after cleaning
+    if (shouldIgnoreLine(cleanedLine)) {
+      i++;
+      continue;
+    }
+    
+    // Look ahead for options
+    const options: string[] = [];
+    let j = i + 1;
+    
+    while (j < lines.length) {
+      const nextLine = lines[j].trim();
+      
+      // Stop at empty line or next question marker
+      if (!nextLine) {
+        j++;
+        break;
       }
       
-      currentQuestion = {
-        question: cleanLine,
-        required: isRequired,
-        options: [],
-      };
-    } 
-    // Check if this is an option for current question
-    else if (currentQuestion && cleanLine.length > 0 && cleanLine.length < 200) {
-      // Check if it looks like an option
-      const isOption = cleanLine.match(/^[-•○●]\s/) || 
-                       cleanLine.match(/^[a-e][.)]\s/i) ||
-                       (currentQuestion.options && currentQuestion.options.length > 0);
+      // Skip "Your answer" placeholders
+      if (/^your answer$/i.test(nextLine)) {
+        j++;
+        continue;
+      }
       
-      if (isOption || !cleanLine.endsWith("?")) {
-        const optionText = cleanLine
+      // Check if this is an option (short line, not a question)
+      const isOption = nextLine.length > 0 && 
+                       nextLine.length < 100 &&
+                       !nextLine.endsWith("?") &&
+                       !nextLine.includes("*") &&
+                       !shouldIgnoreLine(nextLine);
+      
+      // Check if this looks like next question (ends with *, ?, or is longer)
+      const looksLikeQuestion = nextLine.includes("*") || 
+                                nextLine.endsWith("?") ||
+                                nextLine.endsWith(":") ||
+                                (nextLine.length > 50 && !options.length);
+      
+      if (isOption && !looksLikeQuestion) {
+        const cleanOption = nextLine
           .replace(/^[-•○●]\s*/, "")
           .replace(/^[a-e][.)]\s*/i, "")
           .trim();
         
-        if (optionText && optionText.length > 0 && optionText.length < 200) {
-          if (!currentQuestion.options) currentQuestion.options = [];
-          currentQuestion.options.push(optionText);
+        if (cleanOption && cleanOption.length > 0 && !shouldIgnoreLine(cleanOption)) {
+          options.push(cleanOption);
         }
+        j++;
+      } else if (looksLikeQuestion) {
+        break;
+      } else {
+        j++;
       }
+    }
+    
+    // Only add if it looks like a real question (not UI element)
+    const isRealQuestion = cleanedLine.length >= 3 && 
+                          !cleanedLine.toLowerCase().includes("your answer") &&
+                          !cleanedLine.toLowerCase().startsWith("[");
+    
+    if (isRealQuestion) {
+      questionCount++;
+      questions.push({
+        id: `q${questionCount}`,
+        question: cleanedLine,
+        type: options.length > 1 ? "multiple_choice" : "text",
+        options: options.length > 1 ? options : undefined,
+        required: isRequired,
+      });
+    }
+    
+    i = j > i + 1 ? j : i + 1;
+  }
+  
+  // Post-process: remove duplicates and clean up
+  const seen = new Set<string>();
+  const finalQuestions: ParsedQuestion[] = [];
+  
+  for (const q of questions) {
+    const key = q.question.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      finalQuestions.push(q);
     }
   }
   
-  // Add last question
-  if (currentQuestion && currentQuestion.question) {
-    questionCount++;
-    questions.push({
-      id: `q${questionCount}`,
-      question: currentQuestion.question,
-      type: currentQuestion.options?.length ? "multiple_choice" : "text",
-      options: currentQuestion.options,
-      required: currentQuestion.required,
-    });
-  }
+  console.log(`Found ${finalQuestions.length} questions after filtering`);
   
-  // Filter out questions that are likely not real questions
-  return questions.filter(q => 
-    q.question.length > 5 && 
-    !q.question.toLowerCase().includes("email address") &&
-    !q.question.toLowerCase().includes("alamat email")
-  );
+  return finalQuestions;
 }
