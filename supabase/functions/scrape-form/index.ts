@@ -312,6 +312,12 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
         candidate.endsWith(":") ||
         /^\d+\.\s+/.test(rawNext);
 
+      // If we hit something that looks like the NEXT question, stop scanning options
+      // (prevents options from a later question being attached to the current one)
+      if (looksLikeNextQuestion) {
+        break;
+      }
+
       // Option detection
       const isOption =
         candidate.length > 0 &&
@@ -321,7 +327,7 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
         !candidate.includes("*") &&
         !candidate.toLowerCase().startsWith("[");
 
-      if (isOption && !looksLikeNextQuestion) {
+      if (isOption) {
         const cleanOption = candidate
           .replace(/^[-•○●]\s*/, "")
           .replace(/^[a-e][.)]\s*/i, "")
