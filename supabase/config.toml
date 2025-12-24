@@ -1,7 +1,4 @@
 project_id = "raddazeyokjhyandpqcz"
 
-[functions.form-ai]
-verify_jwt = false
-
-[functions.scrape-form]
+[functions.telegram-bot]
 verify_jwt = false
