@@ -240,8 +240,17 @@ export default function Index() {
   };
 
   const generateAnswers = async () => {
+    // If there are no quiz questions, still proceed with identity answers only
     if (quizQuestions.length === 0) {
-      toast.error("Tidak ada soal kuis untuk dijawab");
+      const identityOnly: Answer[] = identityQuestions.map((q) => ({
+        questionId: q.id,
+        answer: getIdentityAnswer(q),
+        isManual: true,
+      }));
+
+      setAnswers(identityOnly);
+      setStep("answers");
+      toast.info("Form ini tidak punya soal kuis—hanya pertanyaan identitas.");
       return;
     }
 
@@ -276,7 +285,7 @@ export default function Index() {
 
       // Combine identity answers with AI answers
       const allAnswers: Answer[] = [];
-      
+
       // Add identity answers
       for (const q of identityQuestions) {
         allAnswers.push({
@@ -285,10 +294,10 @@ export default function Index() {
           isManual: true,
         });
       }
-      
+
       // Add AI answers for quiz
       for (const aiAnswer of data.answers) {
-        const question = quizQuestions.find(q => q.id === aiAnswer.questionId);
+        const question = quizQuestions.find((q) => q.id === aiAnswer.questionId);
         if (question?.type === "text" && manualEssay) {
           // For essay questions with manual mode, use user input or placeholder
           allAnswers.push({
@@ -759,9 +768,11 @@ d. 1950`}
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>{quizQuestions.length} Soal Kuis</CardTitle>
+                      <CardTitle>
+                        {questions.length} Pertanyaan • {quizQuestions.length} Soal Kuis
+                      </CardTitle>
                       <CardDescription>
-                        {formTitle} • {multipleChoiceQuestions.length} pilihan ganda, {essayQuestions.length} uraian
+                        {formTitle} • {identityQuestions.length} identitas • {multipleChoiceQuestions.length} pilihan ganda, {essayQuestions.length} uraian
                       </CardDescription>
                     </div>
                     <Button variant="ghost" size="sm" onClick={resetForm}>
@@ -772,31 +783,50 @@ d. 1950`}
                 <CardContent className="space-y-4">
                   <ScrollArea className="h-[300px] pr-4">
                     <div className="space-y-4">
-                      {quizQuestions.map((q, i) => (
-                        <div key={q.id} className="p-4 rounded-lg bg-secondary/30">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="font-medium">
-                              {i + 1}. {q.question}
-                            </p>
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              q.type === "multiple_choice" ? "bg-blue-500/20 text-blue-400" : "bg-purple-500/20 text-purple-400"
-                            }`}>
-                              {q.type === "multiple_choice" ? "PG" : "Uraian"}
-                            </span>
-                          </div>
-                          {q.options && q.options.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {q.options.map((opt, j) => (
-                                <p key={j} className="text-sm text-muted-foreground pl-4">
-                                  {String.fromCharCode(97 + j)}. {opt}
-                                </p>
-                              ))}
+                      {quizQuestions.length === 0 ? (
+                        <div className="p-4 rounded-lg bg-secondary/30">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="w-5 h-5 text-primary mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="font-medium">Tidak ada soal kuis terdeteksi.</p>
+                              <p className="text-sm text-muted-foreground">
+                                Form ini berisi pertanyaan identitas saja. Kamu bisa lanjut untuk melihat/copy jawaban identitas.
+                              </p>
                             </div>
-                          )}
+                          </div>
                         </div>
-                      ))}
+                      ) : (
+                        quizQuestions.map((q, i) => (
+                          <div key={q.id} className="p-4 rounded-lg bg-secondary/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-medium">
+                                {i + 1}. {q.question}
+                              </p>
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded ${
+                                  q.type === "multiple_choice"
+                                    ? "bg-blue-500/20 text-blue-400"
+                                    : "bg-purple-500/20 text-purple-400"
+                                }`}
+                              >
+                                {q.type === "multiple_choice" ? "PG" : "Uraian"}
+                              </span>
+                            </div>
+                            {q.options && q.options.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {q.options.map((opt, j) => (
+                                  <p key={j} className="text-sm text-muted-foreground pl-4">
+                                    {String.fromCharCode(97 + j)}. {opt}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
                     </div>
                   </ScrollArea>
+
                   <Button
                     onClick={generateAnswers}
                     className="w-full gradient-primary text-primary-foreground font-semibold"
@@ -806,6 +836,11 @@ d. 1950`}
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         AI sedang menjawab...
+                      </>
+                    ) : quizQuestions.length === 0 ? (
+                      <>
+                        <Check className="w-4 h-4 mr-2" />
+                        Lanjutkan (Jawaban Identitas)
                       </>
                     ) : (
                       <>
