@@ -82,6 +82,7 @@ export default function Index() {
   const categorizeQuestions = (qs: Question[]): Question[] => {
     const identityKeywords = [
       "nama", "name", "kelas", "class", "nisn", "nis", "no absen", "nomor absen",
+      "absensi", "absen", // Added to catch "Absensi" field
       "jenis kelamin", "gender", "tanggal lahir", "tempat lahir", "alamat",
       "sekolah", "jurusan", "email", "no hp", "telepon"
     ];
