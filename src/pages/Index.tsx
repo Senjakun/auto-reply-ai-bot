@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,7 +11,8 @@ import {
   Send, 
   Copy, 
   Check, 
-  PlusCircle,
+  Link as LinkIcon,
+  FileText,
   Zap,
   ArrowRight
 } from "lucide-react";
@@ -30,15 +32,76 @@ interface Answer {
 }
 
 export default function Index() {
-  const [questionsInput, setQuestionsInput] = useState("");
+  const [input, setInput] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [scraping, setScraping] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [step, setStep] = useState<"input" | "questions" | "answers">("input");
+  const [formTitle, setFormTitle] = useState("");
 
-  const parseQuestions = () => {
-    const lines = questionsInput.trim().split("\n").filter(line => line.trim());
+  // Detect if input is a URL
+  const isUrl = (text: string): boolean => {
+    const trimmed = text.trim();
+    return trimmed.startsWith("http://") || 
+           trimmed.startsWith("https://") || 
+           trimmed.includes("docs.google.com/forms") ||
+           trimmed.includes("forms.gle");
+  };
+
+  // Handle the main action - either scrape URL or parse text
+  const handleProcess = async () => {
+    const trimmedInput = input.trim();
+    
+    if (!trimmedInput) {
+      toast.error("Masukkan link Google Form atau pertanyaan");
+      return;
+    }
+
+    if (isUrl(trimmedInput)) {
+      await scrapeForm(trimmedInput);
+    } else {
+      parseQuestions(trimmedInput);
+    }
+  };
+
+  // Scrape Google Form from URL
+  const scrapeForm = async (url: string) => {
+    setScraping(true);
+    try {
+      toast.info("Mengambil pertanyaan dari Google Form...");
+      
+      const { data, error } = await supabase.functions.invoke("scrape-form", {
+        body: { url },
+      });
+
+      if (error) {
+        console.error("Scrape error:", error);
+        toast.error("Gagal mengambil form. Coba paste pertanyaan secara manual.");
+        return;
+      }
+
+      if (!data.success || !data.questions || data.questions.length === 0) {
+        toast.error("Tidak dapat mendeteksi pertanyaan. Coba paste pertanyaan secara manual.");
+        return;
+      }
+
+      setQuestions(data.questions);
+      setFormTitle(data.title || "Google Form");
+      setStep("questions");
+      toast.success(`${data.questions.length} pertanyaan ditemukan!`);
+    } catch (err) {
+      console.error("Error scraping:", err);
+      toast.error("Gagal mengambil form. Coba paste pertanyaan secara manual.");
+    } finally {
+      setScraping(false);
+    }
+  };
+
+  // Parse questions from pasted text
+  const parseQuestions = (text: string) => {
+    const lines = text.split("\n").filter(line => line.trim());
     const parsed: Question[] = [];
     let currentQuestion: Partial<Question> | null = null;
 
@@ -83,6 +146,7 @@ export default function Index() {
     }
 
     setQuestions(parsed);
+    setFormTitle("Soal Manual");
     setStep("questions");
     toast.success(`${parsed.length} pertanyaan terdeteksi!`);
   };
@@ -146,11 +210,14 @@ export default function Index() {
   };
 
   const resetForm = () => {
-    setQuestionsInput("");
+    setInput("");
     setQuestions([]);
     setAnswers([]);
+    setFormTitle("");
     setStep("input");
   };
+
+  const isProcessing = loading || scraping;
 
   return (
     <div className="min-h-screen p-4 md:p-8 relative overflow-hidden">
@@ -196,7 +263,7 @@ export default function Index() {
         {step === "input" && (
           <div className="mb-8 animate-fade-in">
             <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6 text-sm">
-              {["Paste pertanyaan", "AI analisis", "Copy jawaban"].map((s, i) => (
+              {["Paste link/soal", "AI analisis", "Copy jawaban"].map((s, i) => (
                 <React.Fragment key={i}>
                   <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 border border-border/50">
                     <div className="w-6 h-6 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-xs">
@@ -213,22 +280,47 @@ export default function Index() {
 
         {/* Main Content */}
         <div className="space-y-6">
-          {/* Step: Input Questions */}
+          {/* Step: Input */}
           {step === "input" && (
             <Card className="glass border-border/50 animate-fade-in">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <PlusCircle className="w-5 h-5 text-primary" />
-                  Masukkan Pertanyaan
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Paste Link atau Soal
                 </CardTitle>
                 <CardDescription>
-                  Copy-paste pertanyaan dari Google Form, kuis, atau ujian. 
-                  Format: pertanyaan bernomor dengan pilihan ganda (a, b, c, d).
+                  Paste link Google Form <span className="text-primary">(otomatis di-scrape)</span> atau langsung paste soal-soalnya.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Textarea
-                  placeholder={`Contoh format:
+                {/* URL Input */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <LinkIcon className="w-4 h-4" />
+                    <span>Link Google Form</span>
+                  </div>
+                  <Input
+                    placeholder="https://docs.google.com/forms/d/e/..."
+                    value={isUrl(input) ? input : ""}
+                    onChange={(e) => setInput(e.target.value)}
+                    className="bg-input border-border"
+                  />
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-sm text-muted-foreground">atau</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+
+                {/* Text Input */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <FileText className="w-4 h-4" />
+                    <span>Paste Soal Langsung</span>
+                  </div>
+                  <Textarea
+                    placeholder={`Contoh format:
 1. Siapa presiden pertama Indonesia?
 a. Soekarno
 b. Soeharto
@@ -240,17 +332,28 @@ a. 1945
 b. 1946
 c. 1944
 d. 1950`}
-                  value={questionsInput}
-                  onChange={(e) => setQuestionsInput(e.target.value)}
-                  className="min-h-[300px] bg-input border-border font-mono text-sm"
-                />
+                    value={isUrl(input) ? "" : input}
+                    onChange={(e) => setInput(e.target.value)}
+                    className="min-h-[200px] bg-input border-border font-mono text-sm"
+                  />
+                </div>
+
                 <Button
-                  onClick={parseQuestions}
+                  onClick={handleProcess}
                   className="w-full gradient-primary text-primary-foreground font-semibold"
-                  disabled={!questionsInput.trim()}
+                  disabled={!input.trim() || isProcessing}
                 >
-                  <Send className="w-4 h-4 mr-2" />
-                  Proses Pertanyaan
+                  {scraping ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Mengambil pertanyaan...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      {isUrl(input.trim()) ? "Ambil Pertanyaan dari Form" : "Proses Pertanyaan"}
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -264,7 +367,7 @@ d. 1950`}
                   <div>
                     <CardTitle>{questions.length} Pertanyaan Terdeteksi</CardTitle>
                     <CardDescription>
-                      Review pertanyaan sebelum AI membuat jawaban
+                      {formTitle} • Review sebelum AI membuat jawaban
                     </CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" onClick={resetForm}>
@@ -280,7 +383,7 @@ d. 1950`}
                         <p className="font-medium">
                           {i + 1}. {q.question}
                         </p>
-                        {q.options && (
+                        {q.options && q.options.length > 0 && (
                           <div className="mt-2 space-y-1">
                             {q.options.map((opt, j) => (
                               <p key={j} className="text-sm text-muted-foreground pl-4">
@@ -325,7 +428,7 @@ d. 1950`}
                       Jawaban Siap!
                     </CardTitle>
                     <CardDescription>
-                      Klik pada jawaban untuk menyalin
+                      {formTitle} • Klik pada jawaban untuk menyalin
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
