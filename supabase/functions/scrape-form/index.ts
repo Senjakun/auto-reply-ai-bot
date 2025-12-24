@@ -103,13 +103,21 @@ const IGNORE_PATTERNS = [
   /^login/i,
   /save your progress/i,
   /indicates required/i,
+  /menunjukkan pertanyaan yang wajib/i,
   /your answer/i,
+  /jawaban anda/i,
   /clear form/i,
+  /hapus formulir/i,
   /submit/i,
+  /kirim/i,
   /next/i,
+  /berikutnya/i,
   /back/i,
+  /kembali/i,
   /previous/i,
+  /sebelumnya/i,
   /never submit passwords/i,
+  /jangan pernah mengirimkan sandi/i,
   /this content is neither created/i,
   /terms of service/i,
   /privacy policy/i,
@@ -126,20 +134,32 @@ const IGNORE_PATTERNS = [
   /^-$/,
 ];
 
+// Headings/sections that look like labels but are not actual questions
+const SECTION_HEADING_PATTERNS = [
+  /^pilihan ganda$/i,
+  /^multiple choice$/i,
+];
+
 function shouldIgnoreLine(line: string): boolean {
-  const trimmed = line.trim().toLowerCase();
-  
+  const trimmed = line.trim();
+  const lower = trimmed.toLowerCase();
+
   // Too short
-  if (trimmed.length < 3) return true;
-  
+  if (lower.length < 3) return true;
+
+  // Section headings (not questions)
+  for (const pattern of SECTION_HEADING_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+
   // Check against ignore patterns
   for (const pattern of IGNORE_PATTERNS) {
-    if (pattern.test(line)) return true;
+    if (pattern.test(trimmed)) return true;
   }
-  
+
   // Contains only special characters
-  if (/^[\s\*\-\\_\[\]\(\)]+$/.test(trimmed)) return true;
-  
+  if (/^[\s\*\-\\_\[\]\(\)]+$/.test(lower)) return true;
+
   return false;
 }
 
@@ -150,10 +170,50 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
   let questionCount = 0;
   let i = 0;
 
+  const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+
+  const isRequiredMarkerLine = (s: string) => {
+    const t = s.toLowerCase();
+    return t.includes("indicates required") || t.includes("menunjukkan pertanyaan yang wajib");
+  };
+
+  const getNextNonEmptyIndex = (startIndex: number): number | null => {
+    for (let k = startIndex; k < lines.length; k++) {
+      const l = (lines[k] ?? "").trim();
+      if (!l) continue;
+      return k;
+    }
+    return null;
+  };
+
+  // Heuristic: treat the first meaningful line before the "required" marker as title (never a question)
+  const requiredMarkerIndex = lines.findIndex((l) => isRequiredMarkerLine(l ?? ""));
+  let titleLineIndex: number | null = null;
+  let titleText: string | null = null;
+  {
+    const scanEnd = requiredMarkerIndex >= 0 ? requiredMarkerIndex : Math.min(lines.length, 20);
+    for (let k = 0; k < scanEnd; k++) {
+      const raw = (lines[k] ?? "").trim();
+      if (!raw || shouldIgnoreLine(raw)) continue;
+      const cleaned = normalize(
+        raw
+          .replace(/\\\*/g, "*")
+          .replace(/^#+\s*/, "")
+          .trim()
+      );
+      if (cleaned.length >= 3) {
+        titleLineIndex = k;
+        titleText = cleaned;
+        break;
+      }
+    }
+  }
+
   const getNextMeaningfulLine = (startIndex: number): string | null => {
     for (let k = startIndex; k < lines.length; k++) {
-      const l = lines[k]?.trim() ?? "";
+      const l = (lines[k] ?? "").trim();
       if (!l) continue;
+      // NOTE: don't filter "Your answer" here because we use it as a signal
       if (shouldIgnoreLine(l)) continue;
       return l;
     }
@@ -161,24 +221,38 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
   };
 
   while (i < lines.length) {
-    const line = lines[i].trim();
+    const rawLine = (lines[i] ?? "").trim();
 
     // Skip empty or ignored lines
-    if (!line || shouldIgnoreLine(line)) {
+    if (!rawLine || shouldIgnoreLine(rawLine)) {
       i++;
       continue;
     }
 
     // Clean the line
-    let cleanedLine = line
-      .replace(/\\\*/g, "*") // Unescape asterisks
-      .replace(/\s*\*\s*$/, "") // Remove trailing asterisk (required marker)
-      .replace(/^\*\s*/, "") // Remove leading asterisk
-      .replace(/^#+\s*/, "") // Remove markdown headers
-      .trim();
+    let cleanedLine = normalize(
+      rawLine
+        .replace(/\\\*/g, "*") // Unescape asterisks
+        .replace(/\s*\*\s*$/, "") // Remove trailing asterisk (required marker)
+        .replace(/^\*\s*/, "") // Remove leading asterisk
+        .replace(/^#+\s*/, "") // Remove markdown headers
+        .trim()
+    );
 
-    // Check if this looks like a required field (has asterisk at end)
-    const isRequired = line.includes("*") || line.includes("\\*");
+    // Remove leading numbering like "1. "
+    cleanedLine = cleanedLine.replace(/^\d+\.\s+/, "");
+
+    // Remove points label like "3 poin" / "3 points"
+    cleanedLine = cleanedLine.replace(/\s+\d+\s*(poin|points)\s*$/i, "");
+
+    // Skip title line if detected
+    if (titleLineIndex === i && titleText && cleanedLine === titleText) {
+      i++;
+      continue;
+    }
+
+    // Check if this looks like a required field (has asterisk at end or escaped)
+    const isRequired = rawLine.includes("*") || rawLine.includes("\\*");
 
     // Skip if still too short after cleaning
     if (cleanedLine.length < 3) {
@@ -192,18 +266,7 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       continue;
     }
 
-    // Heuristic: first visible line often is form title, not a question
-    if (questionCount === 0 && !isRequired) {
-      const nextMeaningful = getNextMeaningfulLine(i + 1)?.toLowerCase() ?? "";
-      const looksLikeTitle = cleanedLine.length <= 80 && !cleanedLine.endsWith("?");
-      const nextLooksLikeField = nextMeaningful.includes("\\*") || nextMeaningful.includes("*") || nextMeaningful.includes("your answer");
-      if (looksLikeTitle && nextLooksLikeField) {
-        i++;
-        continue;
-      }
-    }
-
-    // Look ahead for options (Google Forms often separates options with blank lines)
+    // Look ahead for options
     const options: string[] = [];
     let j = i + 1;
 
@@ -216,41 +279,50 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
         continue;
       }
 
-      // Stop at navigation/footer UI (but allow other ignored lines to be skipped)
-      const lowerNext = rawNext.toLowerCase();
-      if (/(^next$|^back$|^previous$|^submit$|^clear form$)/i.test(rawNext)) {
+      // Stop at navigation/footer UI
+      if (/(^next$|^back$|^previous$|^submit$|^clear form$|^berikutnya$|^kembali$|^sebelumnya$|^kirim$|^hapus formulir$)/i.test(rawNext)) {
         break;
       }
 
-      // Skip "Your answer" placeholders
-      if (/^your answer$/i.test(rawNext)) {
+      // Skip placeholders
+      if (/^(your answer|jawaban anda)$/i.test(rawNext)) {
         j++;
         continue;
       }
 
-      // Skip other UI lines
+      // Skip other ignored lines
       if (shouldIgnoreLine(rawNext)) {
         j++;
         continue;
       }
 
+      const candidate = normalize(
+        rawNext
+          .replace(/\\\*/g, "*")
+          .replace(/^\d+\.\s+/, "")
+          .replace(/\s+\d+\s*(poin|points)\s*$/i, "")
+          .trim()
+      );
+
+      // Next question detection
+      const looksLikeNextQuestion =
+        rawNext.includes("*") ||
+        rawNext.includes("\\*") ||
+        candidate.endsWith("?") ||
+        candidate.endsWith(":") ||
+        /^\d+\.\s+/.test(rawNext);
+
       // Option detection
       const isOption =
-        rawNext.length > 0 &&
-        rawNext.length < 100 &&
-        !rawNext.endsWith("?") &&
-        !rawNext.endsWith(":") &&
-        !rawNext.includes("*");
+        candidate.length > 0 &&
+        candidate.length < 120 &&
+        !candidate.endsWith("?") &&
+        !candidate.endsWith(":") &&
+        !candidate.includes("*") &&
+        !candidate.toLowerCase().startsWith("[");
 
-      // Next question detection (required marker / punctuation / long sentence)
-      const looksLikeQuestion =
-        rawNext.includes("*") ||
-        rawNext.endsWith("?") ||
-        rawNext.endsWith(":") ||
-        rawNext.length > 80;
-
-      if (isOption && !looksLikeQuestion) {
-        const cleanOption = rawNext
+      if (isOption && !looksLikeNextQuestion) {
+        const cleanOption = candidate
           .replace(/^[-•○●]\s*/, "")
           .replace(/^[a-e][.)]\s*/i, "")
           .trim();
@@ -262,19 +334,15 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
         continue;
       }
 
-      // If we've already collected options, this is likely the next question
-      if (options.length > 0) {
-        break;
-      }
+      if (options.length > 0) break;
 
-      // Otherwise keep scanning
       j++;
     }
 
-    // Only add if it looks like a real question (not UI element)
     const isRealQuestion =
       cleanedLine.length >= 3 &&
       !cleanedLine.toLowerCase().includes("your answer") &&
+      !cleanedLine.toLowerCase().includes("jawaban") &&
       !cleanedLine.toLowerCase().startsWith("[");
 
     if (isRealQuestion) {
@@ -282,8 +350,8 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       questions.push({
         id: `q${questionCount}`,
         question: cleanedLine,
-        type: options.length > 1 ? "multiple_choice" : "text",
-        options: options.length > 1 ? options : undefined,
+        type: options.length >= 2 ? "multiple_choice" : "text",
+        options: options.length >= 2 ? options : undefined,
         required: isRequired,
       });
     }
@@ -307,3 +375,4 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
 
   return finalQuestions;
 }
+
