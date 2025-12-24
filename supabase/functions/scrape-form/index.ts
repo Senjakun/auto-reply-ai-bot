@@ -233,16 +233,17 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
     let cleanedLine = normalize(
       rawLine
         .replace(/\\\*/g, "*") // Unescape asterisks
-        .replace(/\s*\*\s*$/, "") // Remove trailing asterisk (required marker)
+        // Remove required markers (works for "*" and "* 3 poin")
+        .replace(/\s*(\\\*|\*)\s*\d*\s*(poin|points)?\s*$/i, "")
         .replace(/^\*\s*/, "") // Remove leading asterisk
         .replace(/^#+\s*/, "") // Remove markdown headers
         .trim()
     );
 
-    // Remove leading numbering like "1. "
-    cleanedLine = cleanedLine.replace(/^\d+\.\s+/, "");
+    // Remove leading numbering like "1. " or "1) "
+    cleanedLine = cleanedLine.replace(/^\d+[\.)]\s+/, "");
 
-    // Remove points label like "3 poin" / "3 points"
+    // Remove points label like "3 poin" / "3 points" (in case it's still present)
     cleanedLine = cleanedLine.replace(/\s+\d+\s*(poin|points)\s*$/i, "");
 
     // Skip title line if detected
@@ -251,8 +252,8 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       continue;
     }
 
-    // Check if this looks like a required field (has asterisk at end or escaped)
-    const isRequired = rawLine.includes("*") || rawLine.includes("\\*");
+    // Check if this looks like a required field
+    const isRequired = /(\\\*|\*)\s*(\d+\s*(poin|points))?\s*$/i.test(rawLine);
 
     // Skip if still too short after cleaning
     if (cleanedLine.length < 3) {
@@ -299,36 +300,34 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       const candidate = normalize(
         rawNext
           .replace(/\\\*/g, "*")
-          .replace(/^\d+\.\s+/, "")
           .replace(/\s+\d+\s*(poin|points)\s*$/i, "")
           .trim()
       );
 
-      // Next question detection
+      const isBullet = /^(\*|-|•|○|●)\s+/.test(rawNext);
+
+      // Next question detection (be conservative; bullet "*" must NOT count as a question)
       const looksLikeNextQuestion =
-        rawNext.includes("*") ||
-        rawNext.includes("\\*") ||
-        candidate.endsWith("?") ||
-        candidate.endsWith(":") ||
-        /^\d+\.\s+/.test(rawNext);
+        /^(\d+[\.)]\s+)/.test(rawNext) ||
+        /(\\\*|\*)\s*(\d+\s*(poin|points))?\s*$/i.test(rawNext) ||
+        (!isBullet && (candidate.endsWith("?") || candidate.endsWith(":")));
 
       // If we hit something that looks like the NEXT question, stop scanning options
-      // (prevents options from a later question being attached to the current one)
       if (looksLikeNextQuestion) {
         break;
       }
 
-      // Option detection
+      // Option detection (support markdown bullets)
       const isOption =
         candidate.length > 0 &&
-        candidate.length < 120 &&
+        candidate.length < 180 &&
         !candidate.endsWith("?") &&
         !candidate.endsWith(":") &&
-        !candidate.includes("*") &&
         !candidate.toLowerCase().startsWith("[");
 
       if (isOption) {
         const cleanOption = candidate
+          .replace(/^(\*|-|•|○|●)\s+/, "")
           .replace(/^[-•○●]\s*/, "")
           .replace(/^[a-e][.)]\s*/i, "")
           .trim();
