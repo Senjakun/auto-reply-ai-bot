@@ -146,19 +146,29 @@ function shouldIgnoreLine(line: string): boolean {
 function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestion[] {
   const questions: ParsedQuestion[] = [];
   const lines = markdown.split("\n");
-  
+
   let questionCount = 0;
   let i = 0;
-  
+
+  const getNextMeaningfulLine = (startIndex: number): string | null => {
+    for (let k = startIndex; k < lines.length; k++) {
+      const l = lines[k]?.trim() ?? "";
+      if (!l) continue;
+      if (shouldIgnoreLine(l)) continue;
+      return l;
+    }
+    return null;
+  };
+
   while (i < lines.length) {
     const line = lines[i].trim();
-    
+
     // Skip empty or ignored lines
     if (!line || shouldIgnoreLine(line)) {
       i++;
       continue;
     }
-    
+
     // Clean the line
     let cleanedLine = line
       .replace(/\\\*/g, "*") // Unescape asterisks
@@ -166,76 +176,107 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       .replace(/^\*\s*/, "") // Remove leading asterisk
       .replace(/^#+\s*/, "") // Remove markdown headers
       .trim();
-    
+
     // Check if this looks like a required field (has asterisk at end)
     const isRequired = line.includes("*") || line.includes("\\*");
-    
+
     // Skip if still too short after cleaning
     if (cleanedLine.length < 3) {
       i++;
       continue;
     }
-    
+
     // Skip if it's a known UI element after cleaning
     if (shouldIgnoreLine(cleanedLine)) {
       i++;
       continue;
     }
-    
-    // Look ahead for options
+
+    // Heuristic: first visible line often is form title, not a question
+    if (questionCount === 0 && !isRequired) {
+      const nextMeaningful = getNextMeaningfulLine(i + 1)?.toLowerCase() ?? "";
+      const looksLikeTitle = cleanedLine.length <= 80 && !cleanedLine.endsWith("?");
+      const nextLooksLikeField = nextMeaningful.includes("\\*") || nextMeaningful.includes("*") || nextMeaningful.includes("your answer");
+      if (looksLikeTitle && nextLooksLikeField) {
+        i++;
+        continue;
+      }
+    }
+
+    // Look ahead for options (Google Forms often separates options with blank lines)
     const options: string[] = [];
     let j = i + 1;
-    
+
     while (j < lines.length) {
-      const nextLine = lines[j].trim();
-      
-      // Stop at empty line or next question marker
-      if (!nextLine) {
-        j++;
-        break;
-      }
-      
-      // Skip "Your answer" placeholders
-      if (/^your answer$/i.test(nextLine)) {
+      const rawNext = (lines[j] ?? "").trim();
+
+      // Skip empty lines between options
+      if (!rawNext) {
         j++;
         continue;
       }
-      
-      // Check if this is an option (short line, not a question)
-      const isOption = nextLine.length > 0 && 
-                       nextLine.length < 100 &&
-                       !nextLine.endsWith("?") &&
-                       !nextLine.includes("*") &&
-                       !shouldIgnoreLine(nextLine);
-      
-      // Check if this looks like next question (ends with *, ?, or is longer)
-      const looksLikeQuestion = nextLine.includes("*") || 
-                                nextLine.endsWith("?") ||
-                                nextLine.endsWith(":") ||
-                                (nextLine.length > 50 && !options.length);
-      
+
+      // Stop at navigation/footer UI (but allow other ignored lines to be skipped)
+      const lowerNext = rawNext.toLowerCase();
+      if (/(^next$|^back$|^previous$|^submit$|^clear form$)/i.test(rawNext)) {
+        break;
+      }
+
+      // Skip "Your answer" placeholders
+      if (/^your answer$/i.test(rawNext)) {
+        j++;
+        continue;
+      }
+
+      // Skip other UI lines
+      if (shouldIgnoreLine(rawNext)) {
+        j++;
+        continue;
+      }
+
+      // Option detection
+      const isOption =
+        rawNext.length > 0 &&
+        rawNext.length < 100 &&
+        !rawNext.endsWith("?") &&
+        !rawNext.endsWith(":") &&
+        !rawNext.includes("*");
+
+      // Next question detection (required marker / punctuation / long sentence)
+      const looksLikeQuestion =
+        rawNext.includes("*") ||
+        rawNext.endsWith("?") ||
+        rawNext.endsWith(":") ||
+        rawNext.length > 80;
+
       if (isOption && !looksLikeQuestion) {
-        const cleanOption = nextLine
+        const cleanOption = rawNext
           .replace(/^[-•○●]\s*/, "")
           .replace(/^[a-e][.)]\s*/i, "")
           .trim();
-        
-        if (cleanOption && cleanOption.length > 0 && !shouldIgnoreLine(cleanOption)) {
+
+        if (cleanOption && !shouldIgnoreLine(cleanOption)) {
           options.push(cleanOption);
         }
         j++;
-      } else if (looksLikeQuestion) {
-        break;
-      } else {
-        j++;
+        continue;
       }
+
+      // If we've already collected options, this is likely the next question
+      if (options.length > 0) {
+        break;
+      }
+
+      // Otherwise keep scanning
+      j++;
     }
-    
+
     // Only add if it looks like a real question (not UI element)
-    const isRealQuestion = cleanedLine.length >= 3 && 
-                          !cleanedLine.toLowerCase().includes("your answer") &&
-                          !cleanedLine.toLowerCase().startsWith("[");
-    
+    const isRealQuestion =
+      cleanedLine.length >= 3 &&
+      !cleanedLine.toLowerCase().includes("your answer") &&
+      !cleanedLine.toLowerCase().startsWith("[");
+
     if (isRealQuestion) {
       questionCount++;
       questions.push({
@@ -246,14 +287,14 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
         required: isRequired,
       });
     }
-    
+
     i = j > i + 1 ? j : i + 1;
   }
-  
+
   // Post-process: remove duplicates and clean up
   const seen = new Set<string>();
   const finalQuestions: ParsedQuestion[] = [];
-  
+
   for (const q of questions) {
     const key = q.question.toLowerCase();
     if (!seen.has(key)) {
@@ -261,8 +302,8 @@ function parseGoogleFormQuestions(markdown: string, html: string): ParsedQuestio
       finalQuestions.push(q);
     }
   }
-  
+
   console.log(`Found ${finalQuestions.length} questions after filtering`);
-  
+
   return finalQuestions;
 }
