@@ -1,71 +1,170 @@
-import React, { useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { 
+  Loader2, 
   Sparkles, 
-  Zap, 
-  Shield, 
-  History, 
-  ArrowRight,
-  CheckCircle2
+  Send, 
+  Copy, 
+  Check, 
+  PlusCircle,
+  Zap,
+  ArrowRight
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+interface Question {
+  id: string;
+  question: string;
+  type: string;
+  options?: string[];
+  required?: boolean;
+}
+
+interface Answer {
+  questionId: string;
+  answer: string;
+}
 
 export default function Index() {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const [questionsInput, setQuestionsInput] = useState("");
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [answers, setAnswers] = useState<Answer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [step, setStep] = useState<"input" | "questions" | "answers">("input");
 
-  useEffect(() => {
-    if (!loading && user) {
-      navigate("/dashboard");
+  const parseQuestions = () => {
+    const lines = questionsInput.trim().split("\n").filter(line => line.trim());
+    const parsed: Question[] = [];
+    let currentQuestion: Partial<Question> | null = null;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      const questionMatch = trimmed.match(/^(\d+)[.)]\s*(.+)/);
+      if (questionMatch) {
+        if (currentQuestion && currentQuestion.question) {
+          parsed.push({
+            id: `q${parsed.length + 1}`,
+            question: currentQuestion.question,
+            type: currentQuestion.options?.length ? "multiple_choice" : "text",
+            options: currentQuestion.options,
+            required: true,
+          });
+        }
+        currentQuestion = { question: questionMatch[2] };
+      } else if (trimmed.match(/^[a-e][.)]/i)) {
+        if (currentQuestion) {
+          if (!currentQuestion.options) currentQuestion.options = [];
+          currentQuestion.options.push(trimmed.replace(/^[a-e][.)]\s*/i, ""));
+        }
+      } else if (currentQuestion) {
+        currentQuestion.question += " " + trimmed;
+      }
     }
-  }, [user, loading, navigate]);
 
-  const features = [
-    {
-      icon: Zap,
-      title: "AI Powered",
-      description: "Menggunakan AI Gemini untuk menjawab dengan akurat",
-    },
-    {
-      icon: Shield,
-      title: "Aman & Privat",
-      description: "Data kamu tersimpan dengan aman di cloud",
-    },
-    {
-      icon: History,
-      title: "Riwayat Tersimpan",
-      description: "Akses kembali jawaban form sebelumnya",
-    },
-  ];
+    if (currentQuestion && currentQuestion.question) {
+      parsed.push({
+        id: `q${parsed.length + 1}`,
+        question: currentQuestion.question,
+        type: currentQuestion.options?.length ? "multiple_choice" : "text",
+        options: currentQuestion.options,
+        required: true,
+      });
+    }
 
-  const steps = [
-    "Paste pertanyaan dari form/kuis",
-    "AI menganalisis dan menjawab",
-    "Copy jawaban ke form asli",
-  ];
+    if (parsed.length === 0) {
+      toast.error("Tidak ada pertanyaan yang terdeteksi. Pastikan format benar.");
+      return;
+    }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+    setQuestions(parsed);
+    setStep("questions");
+    toast.success(`${parsed.length} pertanyaan terdeteksi!`);
+  };
+
+  const generateAnswers = async () => {
+    if (questions.length === 0) {
+      toast.error("Tidak ada pertanyaan untuk dijawab");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("form-ai", {
+        body: {
+          questions,
+          userContext: {},
+        },
+      });
+
+      if (error) {
+        if (error.message.includes("429")) {
+          toast.error("Rate limit. Coba lagi dalam beberapa menit.");
+        } else if (error.message.includes("402")) {
+          toast.error("AI credits habis. Silakan tambah credits.");
+        } else {
+          toast.error(error.message);
+        }
+        return;
+      }
+
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      setAnswers(data.answers);
+      setStep("answers");
+      toast.success("Jawaban berhasil dibuat!");
+    } catch (err) {
+      console.error("Error generating answers:", err);
+      toast.error("Gagal membuat jawaban. Silakan coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyAnswer = (answer: string, id: string) => {
+    navigator.clipboard.writeText(answer);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+    toast.success("Jawaban disalin!");
+  };
+
+  const copyAllAnswers = () => {
+    const text = answers.map((a, i) => {
+      const q = questions.find(q => q.id === a.questionId);
+      return `${i + 1}. ${q?.question || ""}\nJawaban: ${a.answer}`;
+    }).join("\n\n");
+    navigator.clipboard.writeText(text);
+    toast.success("Semua jawaban disalin!");
+  };
+
+  const resetForm = () => {
+    setQuestionsInput("");
+    setQuestions([]);
+    setAnswers([]);
+    setStep("input");
+  };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="min-h-screen p-4 md:p-8 relative overflow-hidden">
       {/* Background effects */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(186_100%_50%/0.15),transparent_50%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,hsl(270_100%_70%/0.1),transparent_50%)]" />
       
-      {/* Animated grid */}
+      {/* Grid pattern */}
       <div 
-        className="absolute inset-0 opacity-[0.03]"
+        className="absolute inset-0 opacity-[0.02]"
         style={{
           backgroundImage: `linear-gradient(hsl(186 100% 50%) 1px, transparent 1px),
                            linear-gradient(90deg, hsl(186 100% 50%) 1px, transparent 1px)`,
-          backgroundSize: '60px 60px'
+          backgroundSize: '50px 50px'
         }}
       />
 
@@ -73,119 +172,216 @@ export default function Index() {
       <div className="absolute top-20 left-10 w-72 h-72 bg-primary/20 rounded-full blur-[100px] animate-pulse" />
       <div className="absolute bottom-20 right-10 w-96 h-96 bg-accent/20 rounded-full blur-[120px] animate-pulse" />
 
-      <div className="relative z-10">
+      <div className="max-w-4xl mx-auto relative z-10">
         {/* Header */}
-        <header className="container mx-auto px-4 py-6">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center glow-primary">
-                <Sparkles className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="text-xl font-bold">AI Form Filler</span>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center glow-primary">
+              <Sparkles className="w-6 h-6 text-primary-foreground" />
             </div>
-            <Link to="/auth">
-              <Button variant="outline" className="border-primary/50 hover:bg-primary/10">
-                Masuk
-              </Button>
-            </Link>
-          </nav>
-        </header>
-
-        {/* Hero */}
-        <main className="container mx-auto px-4 pt-16 pb-24">
-          <div className="max-w-4xl mx-auto text-center space-y-8">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 border border-border/50 text-sm animate-fade-in">
-              <Sparkles className="w-4 h-4 text-primary" />
-              <span>Powered by Google Gemini AI</span>
-            </div>
-
-            {/* Headline */}
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold leading-tight animate-fade-in">
-              Jawab Kuis & Ujian
-              <br />
-              <span className="text-primary glow-text">Secara Otomatis</span>
-            </h1>
-
-            {/* Subheadline */}
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto animate-fade-in">
-              Paste pertanyaan dari Google Form, kuis online, atau ujian. 
-              AI akan menganalisis dan memberikan jawaban yang akurat dalam hitungan detik.
-            </p>
-
-            {/* CTA */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 animate-fade-in">
-              <Link to="/auth">
-                <Button 
-                  size="lg" 
-                  className="gradient-primary text-primary-foreground font-semibold text-lg px-8 py-6 glow-primary hover:opacity-90 transition-opacity"
-                >
-                  Mulai Gratis
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
-              </Link>
+            <div>
+              <h1 className="text-2xl font-bold">AI Form Filler</h1>
               <p className="text-sm text-muted-foreground">
-                Tidak perlu kartu kredit
+                Jawab kuis & ujian otomatis dengan AI
               </p>
             </div>
+          </div>
+          <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
+            <Zap className="w-4 h-4 text-primary" />
+            <span>Powered by Gemini AI</span>
+          </div>
+        </div>
 
-            {/* How it works */}
-            <div className="pt-16 animate-fade-in">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-8">
-                Cara Kerja
-              </h2>
-              <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
-                {steps.map((step, i) => (
-                  <React.Fragment key={i}>
-                    <div className="flex items-center gap-3 px-6 py-4 rounded-xl bg-card/50 border border-border/50">
-                      <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-                        {i + 1}
-                      </div>
-                      <span className="font-medium">{step}</span>
+        {/* How it works - only show on input step */}
+        {step === "input" && (
+          <div className="mb-8 animate-fade-in">
+            <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6 text-sm">
+              {["Paste pertanyaan", "AI analisis", "Copy jawaban"].map((s, i) => (
+                <React.Fragment key={i}>
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 border border-border/50">
+                    <div className="w-6 h-6 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-xs">
+                      {i + 1}
                     </div>
-                    {i < steps.length - 1 && (
-                      <ArrowRight className="w-5 h-5 text-muted-foreground hidden md:block" />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
-
-            {/* Features */}
-            <div className="pt-20 grid md:grid-cols-3 gap-6 animate-fade-in">
-              {features.map((feature, i) => (
-                <div 
-                  key={i} 
-                  className="p-6 rounded-2xl bg-card/50 border border-border/50 hover:border-primary/30 transition-colors group"
-                >
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                    <feature.icon className="w-6 h-6 text-primary" />
+                    <span>{s}</span>
                   </div>
-                  <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                </div>
+                  {i < 2 && <ArrowRight className="w-4 h-4 text-muted-foreground hidden md:block" />}
+                </React.Fragment>
               ))}
             </div>
-
-            {/* Benefits */}
-            <div className="pt-16 animate-fade-in">
-              <div className="inline-flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm">
-                {["Jawaban akurat", "Proses cepat", "Support pilihan ganda & essay", "Gratis untuk mulai"].map((benefit, i) => (
-                  <div key={i} className="flex items-center gap-2 text-muted-foreground">
-                    <CheckCircle2 className="w-4 h-4 text-primary" />
-                    <span>{benefit}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
-        </main>
+        )}
+
+        {/* Main Content */}
+        <div className="space-y-6">
+          {/* Step: Input Questions */}
+          {step === "input" && (
+            <Card className="glass border-border/50 animate-fade-in">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  Masukkan Pertanyaan
+                </CardTitle>
+                <CardDescription>
+                  Copy-paste pertanyaan dari Google Form, kuis, atau ujian. 
+                  Format: pertanyaan bernomor dengan pilihan ganda (a, b, c, d).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Textarea
+                  placeholder={`Contoh format:
+1. Siapa presiden pertama Indonesia?
+a. Soekarno
+b. Soeharto
+c. Habibie
+d. Gus Dur
+
+2. Tahun berapa Indonesia merdeka?
+a. 1945
+b. 1946
+c. 1944
+d. 1950`}
+                  value={questionsInput}
+                  onChange={(e) => setQuestionsInput(e.target.value)}
+                  className="min-h-[300px] bg-input border-border font-mono text-sm"
+                />
+                <Button
+                  onClick={parseQuestions}
+                  className="w-full gradient-primary text-primary-foreground font-semibold"
+                  disabled={!questionsInput.trim()}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Proses Pertanyaan
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Step: Review Questions */}
+          {step === "questions" && (
+            <Card className="glass border-border/50 animate-fade-in">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>{questions.length} Pertanyaan Terdeteksi</CardTitle>
+                    <CardDescription>
+                      Review pertanyaan sebelum AI membuat jawaban
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={resetForm}>
+                    Reset
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ScrollArea className="h-[400px] pr-4">
+                  <div className="space-y-4">
+                    {questions.map((q, i) => (
+                      <div key={q.id} className="p-4 rounded-lg bg-secondary/30">
+                        <p className="font-medium">
+                          {i + 1}. {q.question}
+                        </p>
+                        {q.options && (
+                          <div className="mt-2 space-y-1">
+                            {q.options.map((opt, j) => (
+                              <p key={j} className="text-sm text-muted-foreground pl-4">
+                                {String.fromCharCode(97 + j)}. {opt}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <Button
+                  onClick={generateAnswers}
+                  className="w-full gradient-primary text-primary-foreground font-semibold"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      AI sedang menjawab...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Buat Jawaban dengan AI
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Step: Answers */}
+          {step === "answers" && (
+            <Card className="glass border-border/50 animate-fade-in">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Check className="w-5 h-5 text-green-500" />
+                      Jawaban Siap!
+                    </CardTitle>
+                    <CardDescription>
+                      Klik pada jawaban untuk menyalin
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={copyAllAnswers}>
+                      <Copy className="w-4 h-4 mr-2" />
+                      Salin Semua
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={resetForm}>
+                      Form Baru
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] pr-4">
+                  <div className="space-y-4">
+                    {questions.map((q, i) => {
+                      const answer = answers.find(a => a.questionId === q.id);
+                      return (
+                        <div 
+                          key={q.id} 
+                          className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer group"
+                          onClick={() => copyAnswer(answer?.answer || "", q.id)}
+                        >
+                          <p className="font-medium text-muted-foreground text-sm mb-2">
+                            {i + 1}. {q.question}
+                          </p>
+                          <div className="flex items-start justify-between gap-4">
+                            <p className="text-foreground font-medium">
+                              {answer?.answer || "Tidak ada jawaban"}
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 opacity-0 group-hover:opacity-100"
+                            >
+                              {copied === q.id ? (
+                                <Check className="w-4 h-4 text-green-500" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         {/* Footer */}
-        <footer className="container mx-auto px-4 py-8 border-t border-border/50">
-          <div className="flex items-center justify-center text-sm text-muted-foreground">
-            <p>© 2024 AI Form Filler. Built with Lovable.</p>
-          </div>
+        <footer className="mt-12 text-center text-sm text-muted-foreground">
+          <p>© 2024 AI Form Filler. Built with Lovable.</p>
         </footer>
       </div>
     </div>
