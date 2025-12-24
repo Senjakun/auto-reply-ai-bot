@@ -46,8 +46,11 @@ serve(async (req) => {
       body: JSON.stringify({
         url: formattedUrl,
         formats: ["markdown", "html"],
-        onlyMainContent: true,
-        waitFor: 3000,
+        // Google Forms sering kepotong kalau hanya "main content"
+        // jadi kita ambil full page lalu difilter oleh parser.
+        onlyMainContent: false,
+        // Form yang panjang butuh waktu render lebih lama
+        waitFor: 8000,
       }),
     });
 
