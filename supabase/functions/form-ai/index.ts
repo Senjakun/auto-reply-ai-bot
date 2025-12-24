@@ -29,9 +29,9 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const { questions, userContext, wrongAnswerCount = 0, manualEssay = true }: RequestBody = await req.json();
@@ -43,7 +43,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Processing ${questions.length} questions with AI...`);
+    console.log(`Processing ${questions.length} questions with Gemini AI...`);
     console.log(`Wrong answer count requested: ${wrongAnswerCount}`);
 
     // Separate multiple choice and essay questions
@@ -105,24 +105,32 @@ PENTING:
 - Untuk pilihan ganda, jawaban HARUS SAMA PERSIS dengan salah satu opsi yang tersedia (termasuk huruf a/b/c/d nya)
 - Untuk essay, jawab singkat dan jelas dalam 2-3 kalimat`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    });
+    // Call Google Gemini API directly
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI Gateway error:", response.status, errorText);
+      console.error("Gemini API error:", response.status, errorText);
       
       if (response.status === 429) {
         return new Response(
@@ -130,24 +138,25 @@ PENTING:
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 403) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "API key tidak valid atau tidak memiliki akses. Periksa kembali GEMINI_API_KEY." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
-      throw new Error(`AI Gateway error: ${response.status}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    const aiResponse = data.choices?.[0]?.message?.content;
+    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!aiResponse) {
+      console.error("No response from Gemini:", JSON.stringify(data));
       throw new Error("No response from AI");
     }
 
-    console.log("AI Response received:", aiResponse.substring(0, 500));
+    console.log("Gemini Response received:", aiResponse.substring(0, 500));
 
     // Parse the JSON from AI response
     let answers;
