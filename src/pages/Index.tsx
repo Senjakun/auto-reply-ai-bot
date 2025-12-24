@@ -212,6 +212,23 @@ export default function Index() {
   const essayQuestions = quizQuestions.filter(q => q.type === "text");
   const multipleChoiceQuestions = quizQuestions.filter(q => q.type === "multiple_choice");
 
+  const isStandardIdentityQuestion = (q: Question) => {
+    const lower = q.question.toLowerCase();
+    return (
+      lower.includes("nama") ||
+      lower.includes("name") ||
+      lower.includes("kelas") ||
+      lower.includes("class") ||
+      lower.includes("nisn") ||
+      lower.includes("nis") ||
+      lower.includes("absen")
+    );
+  };
+
+  const classQuestion = identityQuestions.find(
+    (q) => (q.question.toLowerCase().includes("kelas") || q.question.toLowerCase().includes("class"))
+  );
+
   // Auto-fill identity answers based on user input
   const getIdentityAnswer = (q: Question): string => {
     const lower = q.question.toLowerCase();
@@ -539,13 +556,33 @@ d. 1950`}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="kelas">Kelas</Label>
-                    <Input
-                      id="kelas"
-                      placeholder="Contoh: XII IPA 1"
-                      value={userIdentity.kelas}
-                      onChange={(e) => setUserIdentity(prev => ({ ...prev, kelas: e.target.value }))}
-                      className="bg-input"
-                    />
+                    {classQuestion?.type === "multiple_choice" && classQuestion.options ? (
+                      <select
+                        id="kelas"
+                        className="w-full p-2 rounded-md bg-input border border-border"
+                        value={userIdentity.kelas}
+                        onChange={(e) =>
+                          setUserIdentity((prev) => ({ ...prev, kelas: e.target.value }))
+                        }
+                      >
+                        <option value="">Pilih...</option>
+                        {classQuestion.options.map((opt, i) => (
+                          <option key={i} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        id="kelas"
+                        placeholder="Contoh: XII IPA 1"
+                        value={userIdentity.kelas}
+                        onChange={(e) =>
+                          setUserIdentity((prev) => ({ ...prev, kelas: e.target.value }))
+                        }
+                        className="bg-input"
+                      />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="nisn">NISN / No. Absen</Label>
@@ -565,9 +602,13 @@ d. 1950`}
                     <Label className="text-muted-foreground">Pertanyaan identitas lainnya:</Label>
                     <div className="space-y-3">
                       {identityQuestions.map((q) => {
+                        // Jangan tampilkan lagi pertanyaan identitas yang sudah punya kolom standar
+                        // (contoh: "Kelas" akan pakai kolom Kelas di atas, bukan dobel)
+                        if (isStandardIdentityQuestion(q)) return null;
+
                         const autoValue = getIdentityAnswer(q);
                         if (autoValue) return null; // Skip if already auto-filled
-                        
+
                         return (
                           <div key={q.id} className="space-y-2">
                             <Label className="text-sm">{q.question}</Label>
@@ -575,24 +616,30 @@ d. 1950`}
                               <select
                                 className="w-full p-2 rounded-md bg-input border border-border"
                                 value={userIdentity.custom[q.id] || ""}
-                                onChange={(e) => setUserIdentity(prev => ({
-                                  ...prev,
-                                  custom: { ...prev.custom, [q.id]: e.target.value }
-                                }))}
+                                onChange={(e) =>
+                                  setUserIdentity((prev) => ({
+                                    ...prev,
+                                    custom: { ...prev.custom, [q.id]: e.target.value },
+                                  }))
+                                }
                               >
                                 <option value="">Pilih...</option>
                                 {q.options.map((opt, i) => (
-                                  <option key={i} value={opt}>{opt}</option>
+                                  <option key={i} value={opt}>
+                                    {opt}
+                                  </option>
                                 ))}
                               </select>
                             ) : (
                               <Input
                                 placeholder="Masukkan jawaban"
                                 value={userIdentity.custom[q.id] || ""}
-                                onChange={(e) => setUserIdentity(prev => ({
-                                  ...prev,
-                                  custom: { ...prev.custom, [q.id]: e.target.value }
-                                }))}
+                                onChange={(e) =>
+                                  setUserIdentity((prev) => ({
+                                    ...prev,
+                                    custom: { ...prev.custom, [q.id]: e.target.value },
+                                  }))
+                                }
                                 className="bg-input"
                               />
                             )}
