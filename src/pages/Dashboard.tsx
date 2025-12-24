@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { Json } from "@/integrations/supabase/types";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -152,13 +153,14 @@ export default function Dashboard() {
       toast.success("Jawaban berhasil dibuat!");
 
       // Save to history
-      await supabase.from("form_history").insert({
+      const historyEntry = {
         user_id: user!.id,
         form_url: "manual-input",
         form_title: `Form ${new Date().toLocaleDateString("id-ID")}`,
-        questions: questions as unknown as Record<string, unknown>,
-        answers: data.answers as unknown as Record<string, unknown>,
-      });
+        questions: questions as unknown as Json,
+        answers: data.answers as unknown as Json,
+      };
+      await supabase.from("form_history").insert(historyEntry);
     } catch (err) {
       console.error("Error generating answers:", err);
       toast.error("Gagal membuat jawaban. Silakan coba lagi.");
