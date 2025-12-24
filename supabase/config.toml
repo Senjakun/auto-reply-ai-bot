@@ -1,0 +1,4 @@
+project_id = "raddazeyokjhyandpqcz"
+
+[functions.form-ai]
+verify_jwt = true
