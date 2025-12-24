@@ -35,6 +35,10 @@ serve(async (req) => {
       formattedUrl = `https://${formattedUrl}`;
     }
 
+    // Google Forms: kalau user paste /formResponse, kontennya sering cuma halaman awal.
+    // Konversi ke /viewform supaya semua soal kebaca.
+    formattedUrl = formattedUrl.replace(/\/formResponse(\?|$)/i, "/viewform$1");
+
     console.log("Scraping Google Form:", formattedUrl);
 
     const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
