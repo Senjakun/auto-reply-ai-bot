@@ -1,6 +1,7 @@
 import { Shield, CheckCircle, Users, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const Index = () => {
   return (
@@ -17,6 +18,7 @@ const Index = () => {
           <div className="flex items-center gap-4">
             <Button variant="ghost" className="hidden md:inline-flex">About</Button>
             <Button variant="ghost" className="hidden md:inline-flex">FAQ</Button>
+            <ThemeToggle />
             <Button className="bg-primary hover:bg-primary/90">Get Verified</Button>
           </div>
         </nav>
