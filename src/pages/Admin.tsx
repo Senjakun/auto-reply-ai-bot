@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Users, Palette, Settings, LogOut, Check, X, Trash2 } from 'lucide-react';
+import { Shield, Users, Palette, Settings, LogOut, Check, X, Trash2, Music } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,6 +11,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 interface UserWithRole {
   id: string;
@@ -26,6 +27,11 @@ interface ThemeSettings {
   accent_color: string;
 }
 
+interface MusicSettings {
+  music_url: string;
+  music_enabled: boolean;
+}
+
 const Admin = () => {
   const { user, isAdmin, loading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +42,10 @@ const Admin = () => {
     primary_color: '270',
     background_style: 'gradient',
     accent_color: '200'
+  });
+  const [musicSettings, setMusicSettings] = useState<MusicSettings>({
+    music_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    music_enabled: true
   });
   const [loadingUsers, setLoadingUsers] = useState(true);
 
@@ -56,6 +66,7 @@ const Admin = () => {
     if (isAdmin) {
       fetchUsers();
       fetchThemeSettings();
+      fetchMusicSettings();
     }
   }, [isAdmin]);
 
@@ -109,6 +120,81 @@ const Admin = () => {
       }
     } catch (err) {
       console.error('Error fetching theme settings:', err);
+    }
+  };
+
+  const fetchMusicSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('setting_value')
+        .eq('setting_key', 'music')
+        .maybeSingle();
+
+      if (error) throw error;
+      
+      if (data?.setting_value) {
+        const settingValue = data.setting_value as Record<string, unknown>;
+        setMusicSettings({
+          music_url: String(settingValue.music_url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'),
+          music_enabled: settingValue.music_enabled !== false
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching music settings:', err);
+    }
+  };
+
+  const updateMusicSettings = async () => {
+    try {
+      // First check if music setting exists
+      const { data: existing } = await supabase
+        .from('site_settings')
+        .select('id')
+        .eq('setting_key', 'music')
+        .maybeSingle();
+
+      if (existing) {
+        // Update existing
+        const { error } = await supabase
+          .from('site_settings')
+          .update({ 
+            setting_value: {
+              music_url: musicSettings.music_url,
+              music_enabled: musicSettings.music_enabled
+            },
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id
+          })
+          .eq('setting_key', 'music');
+
+        if (error) throw error;
+      } else {
+        // Insert new
+        const { error } = await supabase
+          .from('site_settings')
+          .insert({ 
+            setting_key: 'music',
+            setting_value: {
+              music_url: musicSettings.music_url,
+              music_enabled: musicSettings.music_enabled
+            },
+            updated_by: user?.id
+          });
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'Music Updated',
+        description: 'Music settings have been saved. Refresh the page to hear changes.'
+      });
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update music settings.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -253,6 +339,10 @@ const Admin = () => {
               <Users className="h-4 w-4 mr-2" />
               Users
             </TabsTrigger>
+            <TabsTrigger value="music" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Music className="h-4 w-4 mr-2" />
+              Music
+            </TabsTrigger>
             <TabsTrigger value="theme" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Palette className="h-4 w-4 mr-2" />
               Theme
@@ -325,6 +415,59 @@ const Admin = () => {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Music Tab */}
+          <TabsContent value="music">
+            <Card className="bg-card/50 backdrop-blur-xl border-primary/20">
+              <CardHeader>
+                <CardTitle className="font-display text-2xl flex items-center gap-2">
+                  <Music className="h-6 w-6 text-primary" />
+                  Background Music Settings
+                </CardTitle>
+                <CardDescription>Customize the background music for visitors</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Music URL (MP3 link)</Label>
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/music.mp3"
+                      value={musicSettings.music_url}
+                      onChange={(e) => setMusicSettings({ ...musicSettings, music_url: e.target.value })}
+                      className="bg-background/50"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Masukkan URL ke file MP3. Bisa dari hosting sendiri atau layanan seperti SoundCloud, Google Drive, dll.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-lg bg-background/50 border border-border">
+                    <h4 className="font-medium text-foreground mb-2">Preview Music</h4>
+                    <audio 
+                      controls 
+                      src={musicSettings.music_url} 
+                      className="w-full"
+                      preload="metadata"
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                    <h4 className="font-medium text-foreground mb-2">💡 Tips</h4>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li>• Gunakan file MP3 dengan ukuran kecil (&lt; 5MB) untuk loading cepat</li>
+                      <li>• Pilih musik ambient/lofi tanpa lirik untuk pengalaman terbaik</li>
+                      <li>• Pastikan URL bisa diakses secara publik</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <Button onClick={updateMusicSettings} className="w-full bg-primary hover:bg-primary/90">
+                  Save Music Settings
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

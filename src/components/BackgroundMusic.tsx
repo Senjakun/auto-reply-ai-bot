@@ -1,14 +1,40 @@
 import { useState, useRef, useEffect } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
-// Using a free lofi/ambient music URL - you can replace with your own
-const MUSIC_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
+// Default music URL
+const DEFAULT_MUSIC_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
 
 export const BackgroundMusic = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showPrompt, setShowPrompt] = useState(true);
+  const [musicUrl, setMusicUrl] = useState(DEFAULT_MUSIC_URL);
+
+  // Fetch custom music URL from site_settings
+  useEffect(() => {
+    const fetchMusicSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('site_settings')
+          .select('setting_value')
+          .eq('setting_key', 'music')
+          .maybeSingle();
+
+        if (!error && data?.setting_value) {
+          const settingValue = data.setting_value as Record<string, unknown>;
+          if (settingValue.music_url && typeof settingValue.music_url === 'string') {
+            setMusicUrl(settingValue.music_url);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching music settings:', err);
+      }
+    };
+
+    fetchMusicSettings();
+  }, []);
 
   const toggleMusic = () => {
     if (audioRef.current) {
@@ -35,7 +61,7 @@ export const BackgroundMusic = () => {
 
   return (
     <>
-      <audio ref={audioRef} src={MUSIC_URL} loop preload="auto" />
+      <audio ref={audioRef} src={musicUrl} loop preload="auto" />
       
       {/* Initial prompt to start music (required due to browser autoplay restrictions) */}
       {showPrompt && (
