@@ -1,73 +1,139 @@
-# Welcome to your Lovable project
+# 🎖️ Military Verification Telegram Bot
 
-## Project info
+A standalone Deno-based Telegram bot for military verification with SheerID integration.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- 🔐 **Access Control** - Owner and allowed users system
+- 🎖️ **Military Verification** - SheerID integration for verification
+- 👥 **User Management** - Add/remove allowed users dynamically
+- 📢 **Broadcast** - Send messages to all users
+- 🔄 **Polling Mode** - Works without webhook/domain
 
-There are several ways of editing your application.
+## Quick Start
 
-**Use Lovable**
+### Prerequisites
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- [Deno](https://deno.land/) installed on your system
+- Telegram Bot Token from [@BotFather](https://t.me/BotFather)
+- Your Telegram User ID (get from [@userinfobot](https://t.me/userinfobot))
 
-Changes made via Lovable will be committed automatically to this repo.
+### Installation
 
-**Use your preferred IDE**
+```bash
+# Clone the repository
+git clone https://github.com/Senjakun/auto-reply-ai-bot.git
+cd auto-reply-ai-bot
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+# Run interactive setup
+deno run --allow-all setup.ts
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+# Start the bot
+deno run --allow-all bot.ts
 ```
 
-**Edit a file directly in GitHub**
+### Manual Configuration
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+If you prefer manual setup, copy the example config:
 
-**Use GitHub Codespaces**
+```bash
+cp config.json.example config.json
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Edit `config.json`:
 
-## What technologies are used for this project?
+```json
+{
+  "bot_token": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
+  "owner_id": 123456789,
+  "allowed_users": [],
+  "sheerid_program_id": "YOUR_SHEERID_PROGRAM_ID"
+}
+```
 
-This project is built with:
+## Commands
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### User Commands
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and menu |
+| `/verify` | Get military verification link |
+| `/status` | Check your access status |
+| `/help` | Show help message |
 
-## How can I deploy this project?
+### Owner Commands
+| Command | Description |
+|---------|-------------|
+| `/adduser [id]` | Add user to allowed list |
+| `/removeuser [id]` | Remove user from allowed list |
+| `/users` | List all allowed users |
+| `/broadcast [msg]` | Send message to all users |
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## VPS Deployment
 
-## Can I connect a custom domain to my Lovable project?
+### Using systemd
 
-Yes, you can!
+1. Create service file:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```bash
+sudo nano /etc/systemd/system/military-bot.service
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```ini
+[Unit]
+Description=Military Verification Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/auto-reply-ai-bot
+ExecStart=/home/your-username/.deno/bin/deno run --allow-all bot.ts
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. Enable and start:
+
+```bash
+sudo systemctl enable military-bot
+sudo systemctl start military-bot
+sudo systemctl status military-bot
+```
+
+### Using Docker
+
+```dockerfile
+FROM denoland/deno:latest
+WORKDIR /app
+COPY . .
+CMD ["run", "--allow-all", "bot.ts"]
+```
+
+```bash
+docker build -t military-bot .
+docker run -d --name military-bot -v $(pwd)/config.json:/app/config.json military-bot
+```
+
+## Configuration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bot_token` | string | Telegram Bot API token |
+| `owner_id` | number | Your Telegram user ID |
+| `allowed_users` | number[] | List of allowed user IDs |
+| `sheerid_program_id` | string | SheerID program ID for verification |
+
+## Security
+
+- Never commit `config.json` to git (it's in `.gitignore`)
+- Keep your bot token secure
+- Only the owner can manage users
+- Use allowed_users to restrict access
+
+## License
+
+MIT License
