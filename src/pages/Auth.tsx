@@ -76,8 +76,8 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Background Effects */}
-      <div className="fixed inset-0 bg-grid-pattern opacity-30" />
-      <div className="fixed inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/10" />
+      <div className="fixed inset-0 bg-grid-pattern opacity-30 pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/10 pointer-events-none" />
       
       {/* Header */}
       <header className="relative z-10 container mx-auto px-4 py-6 flex items-center justify-between">
