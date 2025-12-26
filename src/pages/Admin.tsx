@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Users, Palette, Settings, LogOut, Check, X, Trash2, Music } from 'lucide-react';
+import { Shield, Users, Palette, Settings, LogOut, Check, X, Trash2, Music, FileCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -32,6 +32,17 @@ interface MusicSettings {
   music_enabled: boolean;
 }
 
+interface Verification {
+  id: string;
+  user_id: string;
+  sheerid_link: string;
+  status: 'pending' | 'verified' | 'rejected';
+  submitted_at: string;
+  verified_at: string | null;
+  notes: string | null;
+  user_email?: string;
+}
+
 const Admin = () => {
   const { user, isAdmin, loading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -48,6 +59,8 @@ const Admin = () => {
     music_enabled: true
   });
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [verifications, setVerifications] = useState<Verification[]>([]);
+  const [loadingVerifications, setLoadingVerifications] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -67,8 +80,66 @@ const Admin = () => {
       fetchUsers();
       fetchThemeSettings();
       fetchMusicSettings();
+      fetchVerifications();
     }
   }, [isAdmin]);
+
+  const fetchVerifications = async () => {
+    try {
+      const { data: verificationsData, error: verificationsError } = await supabase
+        .from('verifications')
+        .select('*')
+        .order('submitted_at', { ascending: false });
+
+      if (verificationsError) throw verificationsError;
+
+      // Get user emails from profiles
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email');
+
+      const verificationsWithEmail = verificationsData?.map(v => ({
+        ...v,
+        user_email: profiles?.find(p => p.id === v.user_id)?.email || 'Unknown'
+      })) || [];
+
+      setVerifications(verificationsWithEmail);
+    } catch (err) {
+      console.error('Error fetching verifications:', err);
+    } finally {
+      setLoadingVerifications(false);
+    }
+  };
+
+  const updateVerificationStatus = async (id: string, status: 'verified' | 'rejected', notes?: string) => {
+    try {
+      const { error } = await supabase
+        .from('verifications')
+        .update({ 
+          status,
+          verified_at: new Date().toISOString(),
+          notes: notes || null
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setVerifications(verifications.map(v => 
+        v.id === id ? { ...v, status, verified_at: new Date().toISOString(), notes: notes || null } : v
+      ));
+
+      toast({
+        title: 'Verification Updated',
+        description: `Status changed to ${status}.`
+      });
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update verification.',
+        variant: 'destructive'
+      });
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -335,6 +406,10 @@ const Admin = () => {
       <main className="relative z-10 container mx-auto px-4 py-8">
         <Tabs defaultValue="users" className="space-y-6">
           <TabsList className="bg-card/50 backdrop-blur-xl border border-border">
+            <TabsTrigger value="verifications" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <FileCheck className="h-4 w-4 mr-2" />
+              Verifications
+            </TabsTrigger>
             <TabsTrigger value="users" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Users className="h-4 w-4 mr-2" />
               Users
@@ -352,6 +427,90 @@ const Admin = () => {
               Settings
             </TabsTrigger>
           </TabsList>
+
+          {/* Verifications Tab */}
+          <TabsContent value="verifications">
+            <Card className="bg-card/50 backdrop-blur-xl border-primary/20">
+              <CardHeader>
+                <CardTitle className="font-display text-2xl flex items-center gap-2">
+                  <FileCheck className="h-6 w-6 text-primary" />
+                  Verification Management
+                </CardTitle>
+                <CardDescription>Review and update user verification requests</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingVerifications ? (
+                  <p className="text-muted-foreground">Loading verifications...</p>
+                ) : verifications.length === 0 ? (
+                  <p className="text-muted-foreground">No verification requests found.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {verifications.map((v) => (
+                      <div 
+                        key={v.id} 
+                        className="p-4 rounded-lg bg-background/50 border border-border space-y-3"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-medium text-foreground">{v.user_email}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Submitted: {new Date(v.submitted_at).toLocaleString()}
+                            </p>
+                            <a 
+                              href={v.sheerid_link} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline break-all"
+                            >
+                              {v.sheerid_link}
+                            </a>
+                            {v.notes && (
+                              <p className="text-sm text-muted-foreground mt-1">Notes: {v.notes}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 ${
+                              v.status === 'verified' 
+                                ? 'bg-green-500/20 text-green-500' 
+                                : v.status === 'rejected'
+                                ? 'bg-destructive/20 text-destructive'
+                                : 'bg-yellow-500/20 text-yellow-500'
+                            }`}>
+                              {v.status === 'pending' && <Clock className="h-3 w-3" />}
+                              {v.status === 'verified' && <CheckCircle className="h-3 w-3" />}
+                              {v.status === 'rejected' && <XCircle className="h-3 w-3" />}
+                              {v.status}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {v.status === 'pending' && (
+                          <div className="flex gap-2 pt-2 border-t border-border">
+                            <Button 
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => updateVerificationStatus(v.id, 'verified')}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button 
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => updateVerificationStatus(v.id, 'rejected')}
+                            >
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* Users Tab */}
           <TabsContent value="users">
