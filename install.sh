@@ -27,25 +27,31 @@ echo "║                    One Command Setup                         ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo ""
-echo -e "${WHITE}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${WHITE}║                    📋 KONFIGURASI DOMAIN                     ║${NC}"
-echo -e "${WHITE}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${WHITE}║                                                              ║${NC}"
-
-# Input domain
-echo -e "${WHITE}║${NC}  ${YELLOW}Masukkan domain yang akan digunakan:${NC}"
-echo -e "${WHITE}║${NC}  ${CYAN}Contoh: bot.example.com atau example.com${NC}"
-echo -e "${WHITE}║${NC}"
-read -p "  ➤ Domain: " DOMAIN
+# Check if domain passed as argument
+if [ -n "$1" ]; then
+    DOMAIN="$1"
+else
+    echo ""
+    echo -e "${WHITE}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${WHITE}║                    📋 KONFIGURASI DOMAIN                     ║${NC}"
+    echo -e "${WHITE}╠══════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${WHITE}║                                                              ║${NC}"
+    echo -e "${WHITE}║${NC}  ${YELLOW}Masukkan domain yang akan digunakan:${NC}"
+    echo -e "${WHITE}║${NC}  ${CYAN}Contoh: bot.example.com atau example.com${NC}"
+    echo -e "${WHITE}║${NC}"
+    
+    # Read from terminal directly (works even when piped)
+    read -p "  ➤ Domain: " DOMAIN < /dev/tty
+    
+    echo -e "${WHITE}║                                                              ║${NC}"
+    echo -e "${WHITE}╚══════════════════════════════════════════════════════════════╝${NC}"
+fi
 
 if [ -z "$DOMAIN" ]; then
     echo -e "${RED}  ✗ Domain tidak boleh kosong!${NC}"
+    echo -e "${YELLOW}  Cara pakai: sudo ./install.sh domainmu.com${NC}"
     exit 1
 fi
-
-echo -e "${WHITE}║                                                              ║${NC}"
-echo -e "${WHITE}╚══════════════════════════════════════════════════════════════╝${NC}"
 
 # Confirmation
 echo ""
