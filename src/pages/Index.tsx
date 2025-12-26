@@ -1,4 +1,4 @@
-import { Shield, CheckCircle, Users, Award, LogIn, LogOut, Settings } from "lucide-react";
+import { Shield, CheckCircle, Users, Award, LogIn, LogOut, Settings, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -35,6 +35,10 @@ const Index = () => {
               <div className="w-24 h-10 bg-muted animate-pulse rounded-md" />
             ) : user ? (
               <div className="flex items-center gap-2">
+                <Button variant="ghost" onClick={() => navigate('/dashboard')}>
+                  <LayoutDashboard className="h-5 w-5 mr-2" />
+                  Dashboard
+                </Button>
                 {isAdmin && (
                   <Button variant="ghost" onClick={() => navigate('/admin')}>
                     <Settings className="h-5 w-5 mr-2" />

@@ -113,6 +113,36 @@ export type Database = {
         }
         Relationships: []
       }
+      verifications: {
+        Row: {
+          id: string
+          notes: string | null
+          sheerid_link: string
+          status: Database["public"]["Enums"]["verification_status"]
+          submitted_at: string
+          user_id: string
+          verified_at: string | null
+        }
+        Insert: {
+          id?: string
+          notes?: string | null
+          sheerid_link: string
+          status?: Database["public"]["Enums"]["verification_status"]
+          submitted_at?: string
+          user_id: string
+          verified_at?: string | null
+        }
+        Update: {
+          id?: string
+          notes?: string | null
+          sheerid_link?: string
+          status?: Database["public"]["Enums"]["verification_status"]
+          submitted_at?: string
+          user_id?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -128,6 +158,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
+      verification_status: "pending" | "verified" | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -256,6 +287,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
+      verification_status: ["pending", "verified", "rejected"],
     },
   },
 } as const
