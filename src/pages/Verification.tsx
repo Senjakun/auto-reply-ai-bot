@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Shield, ExternalLink, CheckCircle, AlertCircle, ArrowLeft } from "lucide-react";
+import { Shield, ExternalLink, CheckCircle, AlertCircle, ArrowLeft, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Verification = () => {
   const { user, loading } = useAuth();
@@ -47,15 +48,30 @@ const Verification = () => {
 
     setIsSubmitting(true);
     
-    // Simulate processing
-    setTimeout(() => {
+    try {
+      const { error } = await supabase.from("verifications").insert({
+        user_id: user!.id,
+        sheerid_link: sheerIdLink.trim(),
+        status: "pending",
+      });
+
+      if (error) throw error;
+
       toast({
         title: "Verification Submitted!",
         description: "Your SheerID link has been submitted for processing.",
       });
-      setIsSubmitting(false);
       setSheerIdLink("");
-    }, 1500);
+      navigate("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit verification",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -86,15 +102,17 @@ const Verification = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12 relative z-10">
         <div className="max-w-2xl mx-auto">
-          {/* Back Button */}
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/")}
-            className="mb-6"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Home
-          </Button>
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between mb-6">
+            <Button variant="ghost" onClick={() => navigate("/")}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Home
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/dashboard")}>
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              View Dashboard
+            </Button>
+          </div>
 
           <Card className="bg-background/50 backdrop-blur-xl border-primary/20">
             <CardHeader className="text-center">
