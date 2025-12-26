@@ -9,6 +9,7 @@ import { BackgroundMusic } from "@/components/BackgroundMusic";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Admin from "./pages/Admin";
+import Verification from "./pages/Verification";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/verification" element={<Verification />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

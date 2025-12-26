@@ -68,7 +68,11 @@ const Index = () => {
               Secure, fast, and trusted verification for active duty, veterans, and military families.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8 neon-glow">
+              <Button 
+                size="lg" 
+                className="bg-primary hover:bg-primary/90 text-lg px-8 neon-glow"
+                onClick={() => navigate(user ? "/verification" : "/auth")}
+              >
                 Start Verification
               </Button>
               <Button size="lg" variant="outline" className="text-lg px-8 border-primary/50 hover:bg-primary/10">
@@ -174,7 +178,11 @@ const Index = () => {
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-8">
             Join thousands of verified military members and start accessing exclusive benefits today.
           </p>
-          <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-12 neon-glow">
+          <Button 
+            size="lg" 
+            className="bg-primary hover:bg-primary/90 text-lg px-12 neon-glow"
+            onClick={() => navigate(user ? "/verification" : "/auth")}
+          >
             Start Now
           </Button>
         </div>
