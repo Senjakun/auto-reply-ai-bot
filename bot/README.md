@@ -1,47 +1,76 @@
-# Auto Reply AI Bot (Standalone)
+# Auto Reply AI Bot
 
-Bot Telegram standalone untuk Pterodactyl Panel.
+Bot Telegram untuk notifikasi email Outlook dengan verifikasi militer.
 
-## Quick Start
+---
 
-```bash
-cd bot
-npm install
-npm run build
-npm start
+## 🚀 Deploy ke Pterodactyl (Generic Node.js Egg)
+
+### Step 1: Buat Server Baru
+- Buat server dengan **egg Node.js Generic**
+- Pilih versi Node.js **18+**
+
+### Step 2: Set GIT REPO ADDRESS
+```
+https://github.com/AhmadMHawwash/auto-reply-ai
 ```
 
-## Environment Variables
+### Step 3: Set COMMAND RUN (STARTUP COMMAND)
+**Copy persis seperti ini:**
+```bash
+cd bot && npm install && npm run build && BOT_TOKEN={{BOT_TOKEN}} OWNER_ID={{OWNER_ID}} SUPABASE_URL={{SUPABASE_URL}} SUPABASE_ANON_KEY={{SUPABASE_ANON_KEY}} node dist/server.js
+```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `BOT_TOKEN` | ✅ | Telegram Bot Token |
-| `OWNER_ID` | ✅ | Your Telegram User ID |
-| `SUPABASE_URL` | ❌ | Supabase Project URL |
-| `SUPABASE_ANON_KEY` | ❌ | Supabase Anon Key |
-| `SHEERID_PROGRAM_ID` | ❌ | SheerID Program ID |
-| `MS_CLIENT_ID` | ❌ | Microsoft Client ID |
-| `MS_CLIENT_SECRET` | ❌ | Microsoft Client Secret |
+### Step 4: Tambah Variables di Startup
+Klik tab **Startup** → scroll ke bawah → tambah di bagian variables:
 
-## Commands
+| Variable Name | Default Value | Description |
+|---------------|---------------|-------------|
+| BOT_TOKEN | (kosong) | Token dari @BotFather |
+| OWNER_ID | (kosong) | User ID Telegram kamu |
+| SUPABASE_URL | (kosong) | URL Supabase |
+| SUPABASE_ANON_KEY | (kosong) | Anon Key Supabase |
 
-### User Commands
-- `/start` - Welcome message
-- `/status` - Check access status
-- `/inbox` - View emails
-- `/verify` - Military verification link
-- `/help` - Help message
+### Step 5: Reinstall & Start
+1. Klik **Reinstall Server**
+2. Tunggu proses clone, install, build
+3. Start server
 
-### Owner Commands
-- `/approve [id] [days]` - Approve user
-- `/revoke [id]` - Revoke access
-- `/users` - List approved users
-- `/broadcast [msg]` - Broadcast message
+---
 
-## Pterodactyl Setup
+## 📋 Bot Commands
 
-1. Upload egg `pterodactyl/egg-auto-reply-bot-v2.json`
-2. Create server with the egg
-3. Set startup file to `bot/dist/server.js`
-4. Configure variables
-5. Start server
+### Owner
+- `/start` - Menu utama
+- `/inbox` - Lihat 5 email terakhir
+- `/approve [id] [hari]` - Approve user (default 30 hari)
+- `/revoke [id]` - Cabut akses user
+- `/users` - List semua approved users
+- `/broadcast [pesan]` - Kirim ke semua user
+- `/status` - Status bot
+
+### User
+- `/start` - Mulai bot
+- `/status` - Cek status akses
+- `/inbox` - Lihat email (jika approved)
+- `/verify` - Link verifikasi militer
+- `/help` - Bantuan
+
+---
+
+## 🔧 Setup Microsoft Outlook
+
+Setelah bot running, jalankan command ini via Telegram:
+```
+/setclient YOUR_MICROSOFT_CLIENT_ID
+/setsecret YOUR_MICROSOFT_CLIENT_SECRET  
+/setrefresh YOUR_REFRESH_TOKEN
+```
+
+---
+
+## 🗄️ Supabase
+
+Bot butuh tables (sudah tersedia di Lovable Cloud):
+- `telegram_users` - Data user yang approved
+- `site_settings` - Konfigurasi bot (MS credentials, dll)
