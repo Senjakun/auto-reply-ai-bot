@@ -31,7 +31,7 @@ async function getSetting(key: string): Promise<any> {
     .from('site_settings')
     .select('setting_value')
     .eq('setting_key', key)
-    .single()
+    .maybeSingle()
   return data?.setting_value
 }
 
@@ -41,7 +41,7 @@ async function setSetting(key: string, value: any) {
     .from('site_settings')
     .select('id')
     .eq('setting_key', key)
-    .single()
+    .maybeSingle()
 
   if (existing) {
     await supabase
@@ -65,6 +65,71 @@ async function getOwnerId(): Promise<number | null> {
 async function isOwner(userId: number): Promise<boolean> {
   const ownerId = await getOwnerId()
   return ownerId === userId
+}
+
+// Check if user is approved and not expired
+async function isApprovedUser(telegramId: number): Promise<boolean> {
+  const { data } = await supabase
+    .from('telegram_users')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .eq('is_active', true)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle()
+  return !!data
+}
+
+// Get all active approved users
+async function getApprovedUsers(): Promise<any[]> {
+  const { data } = await supabase
+    .from('telegram_users')
+    .select('*')
+    .eq('is_active', true)
+    .gt('expires_at', new Date().toISOString())
+  return data || []
+}
+
+// Approve a user
+async function approveUser(telegramId: number, username: string | null, days: number, approvedBy: number) {
+  const expiresAt = new Date()
+  expiresAt.setDate(expiresAt.getDate() + days)
+
+  const { data: existing } = await supabase
+    .from('telegram_users')
+    .select('id')
+    .eq('telegram_id', telegramId)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase
+      .from('telegram_users')
+      .update({
+        telegram_username: username,
+        expires_at: expiresAt.toISOString(),
+        approved_by: approvedBy,
+        is_active: true,
+        approved_at: new Date().toISOString(),
+      })
+      .eq('telegram_id', telegramId)
+  } else {
+    await supabase
+      .from('telegram_users')
+      .insert({
+        telegram_id: telegramId,
+        telegram_username: username,
+        expires_at: expiresAt.toISOString(),
+        approved_by: approvedBy,
+        is_active: true,
+      })
+  }
+}
+
+// Revoke user access
+async function revokeUser(telegramId: number) {
+  await supabase
+    .from('telegram_users')
+    .update({ is_active: false })
+    .eq('telegram_id', telegramId)
 }
 
 // Get Microsoft credentials from database
@@ -100,7 +165,6 @@ async function getAccessToken(): Promise<string | null> {
     const data = await response.json()
     
     if (data.access_token) {
-      // Update refresh token if new one provided
       if (data.refresh_token && data.refresh_token !== creds.refresh_token) {
         await setSetting('microsoft_credentials', {
           ...creds,
@@ -117,7 +181,7 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 // Fetch Outlook inbox notifications
-async function fetchOutlookInbox(): Promise<any[]> {
+async function fetchOutlookInbox(limit = 10): Promise<any[]> {
   const accessToken = await getAccessToken()
   
   if (!accessToken) {
@@ -126,7 +190,7 @@ async function fetchOutlookInbox(): Promise<any[]> {
 
   try {
     const response = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,isRead,bodyPreview',
+      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=${limit}&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,isRead,bodyPreview`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -143,6 +207,37 @@ async function fetchOutlookInbox(): Promise<any[]> {
   } catch (error) {
     console.error('Error fetching inbox:', error)
     throw error
+  }
+}
+
+// Get last tracked email ID
+async function getLastEmailId(): Promise<string | null> {
+  const { data } = await supabase
+    .from('telegram_inbox_tracker')
+    .select('last_email_id')
+    .order('last_check_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data?.last_email_id || null
+}
+
+// Update last tracked email ID
+async function updateLastEmailId(emailId: string) {
+  const { data: existing } = await supabase
+    .from('telegram_inbox_tracker')
+    .select('id')
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase
+      .from('telegram_inbox_tracker')
+      .update({ last_email_id: emailId, last_check_at: new Date().toISOString() })
+      .eq('id', existing.id)
+  } else {
+    await supabase
+      .from('telegram_inbox_tracker')
+      .insert({ last_email_id: emailId })
   }
 }
 
@@ -167,12 +262,61 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+// Check for new emails and notify all approved users
+async function checkAndNotifyNewEmails() {
+  try {
+    const emails = await fetchOutlookInbox(5)
+    if (emails.length === 0) return
+
+    const lastEmailId = await getLastEmailId()
+    const latestEmail = emails[0]
+
+    if (!lastEmailId || lastEmailId !== latestEmail.id) {
+      // Find new emails (all emails newer than the last tracked one)
+      const newEmails: any[] = []
+      for (const email of emails) {
+        if (email.id === lastEmailId) break
+        newEmails.push(email)
+      }
+
+      if (newEmails.length > 0) {
+        // Update tracker
+        await updateLastEmailId(latestEmail.id)
+
+        // Get all approved users
+        const approvedUsers = await getApprovedUsers()
+        
+        // Also notify owner
+        const ownerId = await getOwnerId()
+        
+        // Send notifications
+        for (const email of newEmails.reverse()) {
+          const message = `📬 <b>Email Baru!</b>\n\n${formatEmail(email)}`
+          
+          // Notify owner
+          if (ownerId) {
+            await sendTelegramMessage(ownerId, message)
+          }
+          
+          // Notify approved users
+          for (const user of approvedUsers) {
+            if (user.telegram_id !== ownerId) {
+              await sendTelegramMessage(user.telegram_id, message)
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking new emails:', error)
+  }
+}
+
 // Handle commands
-async function handleCommand(chatId: number, userId: number, text: string) {
+async function handleCommand(chatId: number, userId: number, username: string | null, text: string) {
   const [command, ...args] = text.split(' ')
   const arg = args.join(' ')
 
-  // Check if owner is set
   const ownerId = await getOwnerId()
 
   // First-time setup - set owner
@@ -184,20 +328,25 @@ async function handleCommand(chatId: number, userId: number, text: string) {
       `Anda sekarang adalah owner bot.\n` +
       `User ID Anda: <code>${userId}</code>\n\n` +
       `<b>Setup Microsoft Outlook:</b>\n` +
-      `/setclient [client_id] - Set Client ID\n` +
-      `/setsecret [client_secret] - Set Client Secret\n` +
-      `/settenant [tenant_id] - Set Tenant ID\n` +
-      `/setrefresh [refresh_token] - Set Refresh Token\n\n` +
-      `<b>Commands:</b>\n` +
-      `/inbox - Cek inbox Outlook\n` +
-      `/status - Cek status konfigurasi\n` +
-      `/help - Bantuan`
+      `/setclient [client_id]\n` +
+      `/setsecret [client_secret]\n` +
+      `/settenant [tenant_id]\n` +
+      `/setrefresh [refresh_token]\n\n` +
+      `<b>User Management:</b>\n` +
+      `/approve [user_id] [days] - Approve user\n` +
+      `/revoke [user_id] - Revoke access\n` +
+      `/users - List approved users\n\n` +
+      `<b>Email:</b>\n` +
+      `/inbox - Cek inbox\n` +
+      `/check - Cek email baru & kirim notif\n` +
+      `/status - Status konfigurasi`
     )
     return
   }
 
-  // Check owner for admin commands
   const isOwnerUser = await isOwner(userId)
+  const isApproved = await isApprovedUser(userId)
+  const hasAccess = isOwnerUser || isApproved
 
   switch (command) {
     case '/start':
@@ -205,41 +354,95 @@ async function handleCommand(chatId: number, userId: number, text: string) {
         await sendTelegramMessage(
           chatId,
           `👋 <b>Selamat datang, Owner!</b>\n\n` +
+          `<b>User Management:</b>\n` +
+          `/approve [user_id] [days] - Approve user\n` +
+          `/revoke [user_id] - Revoke access\n` +
+          `/users - List approved users\n\n` +
+          `<b>Microsoft Config:</b>\n` +
+          `/setclient, /setsecret, /settenant, /setrefresh\n\n` +
+          `<b>Email:</b>\n` +
+          `/inbox - Lihat inbox\n` +
+          `/check - Cek & kirim notif email baru\n` +
+          `/status - Status konfigurasi`
+        )
+      } else if (isApproved) {
+        await sendTelegramMessage(
+          chatId,
+          `👋 <b>Selamat datang!</b>\n\n` +
+          `Anda memiliki akses ke notifikasi Outlook.\n\n` +
           `<b>Commands:</b>\n` +
-          `/inbox - Cek inbox Outlook\n` +
-          `/status - Cek status konfigurasi\n` +
-          `/setclient - Set Microsoft Client ID\n` +
-          `/setsecret - Set Microsoft Client Secret\n` +
-          `/settenant - Set Microsoft Tenant ID\n` +
-          `/setrefresh - Set Microsoft Refresh Token\n` +
-          `/help - Bantuan`
+          `/inbox - Lihat inbox\n` +
+          `/mystatus - Cek status akses Anda`
         )
       } else {
-        await sendTelegramMessage(chatId, '⛔ Anda tidak memiliki akses ke bot ini.')
+        await sendTelegramMessage(
+          chatId,
+          `⛔ <b>Akses Ditolak</b>\n\n` +
+          `Anda belum mendapat izin untuk menggunakan bot ini.\n` +
+          `User ID Anda: <code>${userId}</code>\n\n` +
+          `Hubungi owner untuk request akses.`
+        )
       }
       break
 
     case '/help':
-      if (!isOwnerUser) {
+      if (isOwnerUser) {
+        await sendTelegramMessage(
+          chatId,
+          `📖 <b>Panduan Owner</b>\n\n` +
+          `<b>User Management:</b>\n` +
+          `/approve [user_id] [days] - Berikan akses\n` +
+          `Contoh: /approve 123456789 30\n\n` +
+          `/revoke [user_id] - Cabut akses\n` +
+          `/users - Lihat semua user\n\n` +
+          `<b>Email Notifications:</b>\n` +
+          `/check - Cek email baru & notif ke semua user\n` +
+          `/inbox - Lihat 10 email terbaru\n\n` +
+          `<b>Config:</b>\n` +
+          `/status - Lihat status\n` +
+          `/setclient, /setsecret, /settenant, /setrefresh`
+        )
+      } else if (hasAccess) {
+        await sendTelegramMessage(
+          chatId,
+          `📖 <b>Panduan</b>\n\n` +
+          `/inbox - Lihat inbox\n` +
+          `/mystatus - Cek status akses`
+        )
+      } else {
+        await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
+      }
+      break
+
+    case '/mystatus':
+      if (!hasAccess) {
         await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
         return
       }
-      await sendTelegramMessage(
-        chatId,
-        `📖 <b>Panduan Bot Outlook</b>\n\n` +
-        `<b>Setup Microsoft Azure:</b>\n` +
-        `1. Buat App di Azure Portal\n` +
-        `2. Dapatkan Client ID, Client Secret, Tenant ID\n` +
-        `3. Generate Refresh Token dengan OAuth flow\n` +
-        `4. Set semua credentials via commands\n\n` +
-        `<b>Commands:</b>\n` +
-        `/inbox - Lihat 10 email terbaru\n` +
-        `/status - Cek status konfigurasi\n` +
-        `/setclient [value] - Set Client ID\n` +
-        `/setsecret [value] - Set Client Secret\n` +
-        `/settenant [value] - Set Tenant ID\n` +
-        `/setrefresh [value] - Set Refresh Token`
-      )
+      
+      if (isOwnerUser) {
+        await sendTelegramMessage(chatId, '👑 Anda adalah Owner. Akses tidak terbatas.')
+      } else {
+        const { data: userData } = await supabase
+          .from('telegram_users')
+          .select('*')
+          .eq('telegram_id', userId)
+          .maybeSingle()
+        
+        if (userData) {
+          const expiresAt = new Date(userData.expires_at)
+          const now = new Date()
+          const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+          
+          await sendTelegramMessage(
+            chatId,
+            `📊 <b>Status Akses Anda</b>\n\n` +
+            `User ID: <code>${userId}</code>\n` +
+            `Berlaku hingga: ${expiresAt.toLocaleDateString('id-ID')}\n` +
+            `Sisa waktu: ${daysLeft} hari`
+          )
+        }
+      }
       break
 
     case '/status':
@@ -248,12 +451,100 @@ async function handleCommand(chatId: number, userId: number, text: string) {
         return
       }
       const creds = await getMicrosoftCredentials()
+      const approvedCount = (await getApprovedUsers()).length
       const status = `📊 <b>Status Konfigurasi</b>\n\n` +
-        `Client ID: ${creds.client_id ? '✅ Set' : '❌ Belum'}\n` +
-        `Client Secret: ${creds.client_secret ? '✅ Set' : '❌ Belum'}\n` +
-        `Tenant ID: ${creds.tenant_id ? '✅ Set' : '❌ Belum'}\n` +
-        `Refresh Token: ${creds.refresh_token ? '✅ Set' : '❌ Belum'}`
+        `<b>Microsoft:</b>\n` +
+        `Client ID: ${creds.client_id ? '✅' : '❌'}\n` +
+        `Client Secret: ${creds.client_secret ? '✅' : '❌'}\n` +
+        `Tenant ID: ${creds.tenant_id ? '✅' : '❌'}\n` +
+        `Refresh Token: ${creds.refresh_token ? '✅' : '❌'}\n\n` +
+        `<b>Users:</b>\n` +
+        `Approved users: ${approvedCount}`
       await sendTelegramMessage(chatId, status)
+      break
+
+    case '/approve':
+      if (!isOwnerUser) {
+        await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
+        return
+      }
+      const approveArgs = arg.split(' ')
+      if (approveArgs.length < 2) {
+        await sendTelegramMessage(chatId, '❌ Gunakan: /approve [user_id] [days]\nContoh: /approve 123456789 30')
+        return
+      }
+      const targetUserId = parseInt(approveArgs[0])
+      const days = parseInt(approveArgs[1])
+      
+      if (isNaN(targetUserId) || isNaN(days) || days < 1) {
+        await sendTelegramMessage(chatId, '❌ User ID dan days harus berupa angka valid.')
+        return
+      }
+      
+      await approveUser(targetUserId, null, days, userId)
+      await sendTelegramMessage(chatId, `✅ User <code>${targetUserId}</code> berhasil diapprove untuk ${days} hari.`)
+      
+      // Notify the approved user
+      try {
+        await sendTelegramMessage(
+          targetUserId,
+          `🎉 <b>Akses Diberikan!</b>\n\n` +
+          `Anda telah mendapat akses ke bot Outlook notifications selama ${days} hari.\n\n` +
+          `Gunakan /start untuk mulai.`
+        )
+      } catch (e) {
+        // User might not have started the bot yet
+      }
+      break
+
+    case '/revoke':
+      if (!isOwnerUser) {
+        await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
+        return
+      }
+      const revokeUserId = parseInt(arg)
+      if (isNaN(revokeUserId)) {
+        await sendTelegramMessage(chatId, '❌ Gunakan: /revoke [user_id]')
+        return
+      }
+      
+      await revokeUser(revokeUserId)
+      await sendTelegramMessage(chatId, `✅ Akses user <code>${revokeUserId}</code> telah dicabut.`)
+      
+      // Notify the revoked user
+      try {
+        await sendTelegramMessage(revokeUserId, '⚠️ Akses Anda ke bot ini telah dicabut.')
+      } catch (e) {
+        // User might have blocked the bot
+      }
+      break
+
+    case '/users':
+      if (!isOwnerUser) {
+        await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
+        return
+      }
+      const users = await getApprovedUsers()
+      
+      if (users.length === 0) {
+        await sendTelegramMessage(chatId, '📭 Belum ada user yang diapprove.')
+        return
+      }
+      
+      let userList = `👥 <b>Approved Users (${users.length})</b>\n\n`
+      for (const user of users) {
+        const expiresAt = new Date(user.expires_at)
+        const now = new Date()
+        const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        
+        userList += `• <code>${user.telegram_id}</code>`
+        if (user.telegram_username) {
+          userList += ` (@${user.telegram_username})`
+        }
+        userList += ` - ${daysLeft} hari lagi\n`
+      }
+      
+      await sendTelegramMessage(chatId, userList)
       break
 
     case '/setclient':
@@ -313,7 +604,7 @@ async function handleCommand(chatId: number, userId: number, text: string) {
       break
 
     case '/inbox':
-      if (!isOwnerUser) {
+      if (!hasAccess) {
         await sendTelegramMessage(chatId, '⛔ Akses ditolak.')
         return
       }
@@ -331,17 +622,28 @@ async function handleCommand(chatId: number, userId: number, text: string) {
         }
         
         await sendTelegramMessage(chatId, `📬 Menampilkan ${emails.length} email terbaru.`)
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         await sendTelegramMessage(
           chatId,
-          `❌ Error: ${error.message}\n\nPastikan kredensial Microsoft sudah dikonfigurasi dengan benar. Gunakan /status untuk cek.`
+          `❌ Error: ${errorMessage}\n\nGunakan /status untuk cek konfigurasi.`
         )
       }
       break
 
+    case '/check':
+      if (!isOwnerUser) {
+        await sendTelegramMessage(chatId, '⛔ Hanya owner yang bisa trigger manual check.')
+        return
+      }
+      await sendTelegramMessage(chatId, '🔍 Mengecek email baru...')
+      await checkAndNotifyNewEmails()
+      await sendTelegramMessage(chatId, '✅ Pengecekan selesai.')
+      break
+
     default:
-      if (isOwnerUser) {
-        await sendTelegramMessage(chatId, '❓ Command tidak dikenal. Gunakan /help untuk bantuan.')
+      if (hasAccess) {
+        await sendTelegramMessage(chatId, '❓ Command tidak dikenal. Gunakan /help.')
       }
   }
 }
@@ -352,15 +654,41 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Check if this is a cron/scheduled call for auto-check
+    const url = new URL(req.url)
+    if (url.searchParams.get('action') === 'check_new_emails') {
+      await checkAndNotifyNewEmails()
+      return new Response(JSON.stringify({ ok: true, action: 'checked' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const update = await req.json()
     
     if (update.message) {
       const chatId = update.message.chat.id
       const userId = update.message.from.id
+      const username = update.message.from.username || null
       const text = update.message.text || ''
 
+      // Update username if user sends a message
+      if (username) {
+        const { data: existingUser } = await supabase
+          .from('telegram_users')
+          .select('id')
+          .eq('telegram_id', userId)
+          .maybeSingle()
+        
+        if (existingUser) {
+          await supabase
+            .from('telegram_users')
+            .update({ telegram_username: username })
+            .eq('telegram_id', userId)
+        }
+      }
+
       if (text.startsWith('/')) {
-        await handleCommand(chatId, userId, text)
+        await handleCommand(chatId, userId, username, text)
       }
     }
 
