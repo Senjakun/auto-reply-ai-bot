@@ -1,6 +1,18 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+// Type definitions for API responses
+interface TokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  error?: string;
+}
+
+interface GraphMailResponse {
+  value?: any[];
+  error?: { message: string };
+}
+
 // Configuration from environment variables
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const OWNER_ID = parseInt(process.env.OWNER_ID || '0');
@@ -150,7 +162,7 @@ async function getAccessToken(): Promise<string | null> {
       })
     });
     
-    const data = await response.json();
+    const data: TokenResponse = await response.json();
     
     if (data.refresh_token) {
       await setSetting('microsoft_credentials', {
@@ -178,7 +190,7 @@ async function fetchOutlookInbox(limit = 10): Promise<any[]> {
       }
     );
     
-    const data = await response.json();
+    const data: GraphMailResponse = await response.json();
     return data.value || [];
   } catch (error) {
     console.error('Error fetching inbox:', error);
