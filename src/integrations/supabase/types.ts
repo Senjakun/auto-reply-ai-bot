@@ -92,6 +92,60 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_inbox_tracker: {
+        Row: {
+          id: string
+          last_check_at: string | null
+          last_email_id: string | null
+        }
+        Insert: {
+          id?: string
+          last_check_at?: string | null
+          last_email_id?: string | null
+        }
+        Update: {
+          id?: string
+          last_check_at?: string | null
+          last_email_id?: string | null
+        }
+        Relationships: []
+      }
+      telegram_users: {
+        Row: {
+          approved_at: string | null
+          approved_by: number
+          created_at: string | null
+          expires_at: string
+          id: string
+          is_active: boolean | null
+          telegram_id: number
+          telegram_username: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by: number
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          is_active?: boolean | null
+          telegram_id: number
+          telegram_username?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: number
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          is_active?: boolean | null
+          telegram_id?: number
+          telegram_username?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
