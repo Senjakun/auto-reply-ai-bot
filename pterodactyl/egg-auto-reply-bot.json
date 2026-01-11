@@ -1,0 +1,112 @@
+{
+    "_comment": "DO NOT EDIT: FILE ACTIVE ON ACTIVE ON https://github.com/pterodactyl/eggs",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2025-01-11T12:00:00+00:00",
+    "name": "Auto Reply AI Bot",
+    "author": "senjakun@github.com",
+    "description": "Telegram bot for Outlook email auto-reply with military verification via SheerID integration. Supports webhook mode for instant message delivery.",
+    "features": ["nodejs"],
+    "docker_images": {
+        "node:20-alpine": "ghcr.io/parkervcp/yolks:nodejs_20"
+    },
+    "file_denylist": [],
+    "startup": "node {{STARTUP_FILE}}",
+    "config": {
+        "files": "{\r\n    \"config.json\": {\r\n        \"parser\": \"json\",\r\n        \"find\": {\r\n            \"bot_token\": \"{{server.build.env.BOT_TOKEN}}\",\r\n            \"owner_id\": \"{{server.build.env.OWNER_ID}}\",\r\n            \"sheerid_program_id\": \"{{server.build.env.SHEERID_PROGRAM_ID}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"Bot is running\"\r\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\napt update\napt install -y git curl\n\ncd /mnt/server\n\nif [ -d \".git\" ]; then\n    git pull\nelse\n    git clone https://github.com/Senjakun/auto-reply-ai-bot.git .\nfi\n\nnpm install\nnpm run build\n\necho '{\"bot_token\":\"\",\"owner_id\":0,\"allowed_users\":[],\"sheerid_program_id\":\"\"}' > config.json",
+            "container": "ghcr.io/parkervcp/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Startup File",
+            "description": "The main file to start the bot",
+            "env_variable": "STARTUP_FILE",
+            "default_value": "dist/server.js",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "sort": 1
+        },
+        {
+            "name": "Bot Token",
+            "description": "Your Telegram Bot Token from @BotFather",
+            "env_variable": "BOT_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "sort": 2
+        },
+        {
+            "name": "Owner ID",
+            "description": "Your Telegram User ID (get from @userinfobot)",
+            "env_variable": "OWNER_ID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric",
+            "sort": 3
+        },
+        {
+            "name": "SheerID Program ID",
+            "description": "Your SheerID Program ID for military verification",
+            "env_variable": "SHEERID_PROGRAM_ID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 4
+        },
+        {
+            "name": "Microsoft Client ID",
+            "description": "Microsoft Azure App Client ID for Outlook integration",
+            "env_variable": "MS_CLIENT_ID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 5
+        },
+        {
+            "name": "Microsoft Client Secret",
+            "description": "Microsoft Azure App Client Secret",
+            "env_variable": "MS_CLIENT_SECRET",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 6
+        },
+        {
+            "name": "Supabase URL",
+            "description": "Supabase Project URL",
+            "env_variable": "SUPABASE_URL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 7
+        },
+        {
+            "name": "Supabase Anon Key",
+            "description": "Supabase Anonymous/Public Key",
+            "env_variable": "SUPABASE_ANON_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 8
+        }
+    ]
+}
