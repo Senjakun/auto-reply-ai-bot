@@ -162,7 +162,7 @@ async function getAccessToken(): Promise<string | null> {
       })
     });
     
-    const data: TokenResponse = await response.json();
+    const data = (await response.json()) as TokenResponse;
     
     if (data.refresh_token) {
       await setSetting('microsoft_credentials', {
@@ -190,7 +190,7 @@ async function fetchOutlookInbox(limit = 10): Promise<any[]> {
       }
     );
     
-    const data: GraphMailResponse = await response.json();
+    const data = (await response.json()) as GraphMailResponse;
     return data.value || [];
   } catch (error) {
     console.error('Error fetching inbox:', error);
