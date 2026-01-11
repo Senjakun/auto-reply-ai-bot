@@ -16,7 +16,7 @@
         "ghcr.io/parkervcp/yolks:nodejs_20": "ghcr.io/parkervcp/yolks:nodejs_20"
     },
     "file_denylist": [],
-    "startup": "if [[ -d .git ]]; then git pull; fi; if [[ ! -d node_modules ]]; then /usr/local/bin/npm install; fi; if [[ ! -d dist ]]; then /usr/local/bin/npm run build; fi; /usr/local/bin/node {{STARTUP_FILE}}",
+    "startup": "cd bot && if [[ ! -d node_modules ]]; then /usr/local/bin/npm install; fi && if [[ ! -d dist ]]; then /usr/local/bin/npm run build; fi && cd .. && /usr/local/bin/node {{STARTUP_FILE}}",
     "config": {
         "files": "{}",
         "startup": "{\r\n    \"done\": \"Bot is running\"\r\n}",
@@ -25,7 +25,7 @@
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\napt update\napt install -y git curl\n\ncd /mnt/server\n\nif [ -d \".git\" ]; then\n    git pull\nelse\n    git clone https://github.com/Senjakun/auto-reply-ai-bot.git .\nfi\n\nnpm install\nnpm run build\n\necho \"Installation complete!\"",
+            "script": "#!/bin/bash\napt update\napt install -y git curl\n\ncd /mnt/server\n\nif [ -d \".git\" ]; then\n    git pull\nelse\n    git clone https://github.com/Senjakun/auto-reply-ai-bot.git .\nfi\n\ncd bot\nnpm install\nnpm run build\n\necho \"Installation complete!\"",
             "container": "ghcr.io/parkervcp/installers:debian",
             "entrypoint": "bash"
         }
@@ -35,7 +35,7 @@
             "name": "Startup File",
             "description": "The main file to start the bot",
             "env_variable": "STARTUP_FILE",
-            "default_value": "dist/server.js",
+            "default_value": "bot/dist/server.js",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string",
