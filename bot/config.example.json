@@ -1,0 +1,9 @@
+{
+  "bot_token": "123456:ABC-YOUR-BOT-TOKEN-FROM-BOTFATHER",
+  "owner_id": 123456789,
+  "supabase_url": "https://raddazeyokjhyandpqcz.supabase.co",
+  "supabase_anon_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZGRhemV5b2tqaHlhbmRwcWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NjI4OTMsImV4cCI6MjA4MjEzODg5M30.iEts6HenknKJV8yY3-FrvXgGioud5tfMwQigmwZRYss",
+  "sheerid_program_id": "",
+  "ms_client_id": "",
+  "ms_client_secret": ""
+}
