@@ -1,5 +1,86 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// ============================================
+// CONFIG FILE LOADER
+// ============================================
+interface Config {
+  bot_token: string;
+  owner_id: number;
+  supabase_url: string;
+  supabase_anon_key: string;
+  sheerid_program_id?: string;
+  ms_client_id?: string;
+  ms_client_secret?: string;
+}
+
+function loadConfig(): Config {
+  const configPath = path.join(process.cwd(), 'config.json');
+  
+  // Check if config.json exists
+  if (!fs.existsSync(configPath)) {
+    console.error('═══════════════════════════════════════════');
+    console.error('❌ ERROR: config.json tidak ditemukan!');
+    console.error('═══════════════════════════════════════════');
+    console.log('\n📝 Cara Setup:');
+    console.log('1. Copy file config.example.json ke config.json');
+    console.log('2. Edit config.json dan isi nilai-nilai yang diperlukan\n');
+    console.log('Contoh config.json:');
+    console.log(JSON.stringify({
+      bot_token: "123456:ABC-YOUR-BOT-TOKEN",
+      owner_id: 123456789,
+      supabase_url: "https://xxx.supabase.co",
+      supabase_anon_key: "eyJhbGc..."
+    }, null, 2));
+    process.exit(1);
+  }
+  
+  try {
+    const configRaw = fs.readFileSync(configPath, 'utf-8');
+    const config: Config = JSON.parse(configRaw);
+    
+    // Validate required fields
+    const errors: string[] = [];
+    
+    if (!config.bot_token || config.bot_token.includes('YOUR')) {
+      errors.push('bot_token - Token dari @BotFather');
+    }
+    if (!config.owner_id || config.owner_id === 123456789) {
+      errors.push('owner_id - ID Telegram kamu (dari @userinfobot)');
+    }
+    if (!config.supabase_url || config.supabase_url.includes('xxx')) {
+      errors.push('supabase_url - URL database');
+    }
+    if (!config.supabase_anon_key || config.supabase_anon_key.length < 100) {
+      errors.push('supabase_anon_key - Key database (panjang ~200 karakter)');
+    }
+    
+    if (errors.length > 0) {
+      console.error('═══════════════════════════════════════════');
+      console.error('❌ ERROR: config.json tidak lengkap!');
+      console.error('═══════════════════════════════════════════');
+      console.log('\n⚠️ Field yang perlu diisi:');
+      errors.forEach(e => console.log(`   • ${e}`));
+      console.log('\n📁 Edit file config.json dan isi nilai yang benar.');
+      process.exit(1);
+    }
+    
+    return config;
+  } catch (error) {
+    console.error('═══════════════════════════════════════════');
+    console.error('❌ ERROR: config.json tidak valid!');
+    console.error('═══════════════════════════════════════════');
+    console.error('\nPastikan format JSON benar (periksa koma, kutip, dll)');
+    console.error('Error:', error);
+    process.exit(1);
+  }
+}
+
+// Load config
+const config = loadConfig();
+console.log('✅ Config loaded dari config.json');
 
 // Type definitions for API responses
 interface TokenResponse {
@@ -13,41 +94,18 @@ interface GraphMailResponse {
   error?: { message: string };
 }
 
-// Configuration from environment variables
-const BOT_TOKEN = process.env.BOT_TOKEN || '';
-const OWNER_ID = parseInt(process.env.OWNER_ID || '0');
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-const SHEERID_PROGRAM_ID = process.env.SHEERID_PROGRAM_ID || '';
-const MS_CLIENT_ID = process.env.MS_CLIENT_ID || '';
-const MS_CLIENT_SECRET = process.env.MS_CLIENT_SECRET || '';
-
-// Validate required config
-if (!BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN is required!');
-  process.exit(1);
-}
-
-if (!OWNER_ID) {
-  console.error('❌ OWNER_ID is required!');
-  process.exit(1);
-}
-
-// Initialize Supabase client (optional)
-let supabase: SupabaseClient | null = null;
-if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  console.log('✅ Supabase connected');
-}
+// Initialize Supabase client
+const supabase: SupabaseClient = createClient(config.supabase_url, config.supabase_anon_key);
+console.log('✅ Database connected');
 
 // Initialize Telegram Bot with polling
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(config.bot_token, { polling: true });
 
-console.log('🤖 Bot is starting...');
+console.log('🤖 Bot starting...');
 
 // Helper functions
 function isOwner(userId: number): boolean {
-  return userId === OWNER_ID;
+  return userId === config.owner_id;
 }
 
 function escapeHtml(text: string): string {
@@ -60,8 +118,6 @@ function escapeHtml(text: string): string {
 
 // Database functions
 async function getSetting(key: string): Promise<any> {
-  if (!supabase) return null;
-  
   const { data } = await supabase
     .from('site_settings')
     .select('setting_value')
@@ -72,8 +128,6 @@ async function getSetting(key: string): Promise<any> {
 }
 
 async function setSetting(key: string, value: any): Promise<void> {
-  if (!supabase) return;
-  
   await supabase
     .from('site_settings')
     .upsert({
@@ -85,7 +139,6 @@ async function setSetting(key: string, value: any): Promise<void> {
 
 async function isApprovedUser(telegramId: number): Promise<boolean> {
   if (isOwner(telegramId)) return true;
-  if (!supabase) return false;
   
   const { data } = await supabase
     .from('telegram_users')
@@ -101,8 +154,6 @@ async function isApprovedUser(telegramId: number): Promise<boolean> {
 }
 
 async function getApprovedUsers(): Promise<any[]> {
-  if (!supabase) return [];
-  
   const { data } = await supabase
     .from('telegram_users')
     .select('*')
@@ -113,8 +164,6 @@ async function getApprovedUsers(): Promise<any[]> {
 }
 
 async function approveUser(telegramId: number, username: string | null, days: number): Promise<void> {
-  if (!supabase) return;
-  
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + days);
   
@@ -123,7 +172,7 @@ async function approveUser(telegramId: number, username: string | null, days: nu
     .upsert({
       telegram_id: telegramId,
       telegram_username: username,
-      approved_by: OWNER_ID,
+      approved_by: config.owner_id,
       approved_at: new Date().toISOString(),
       expires_at: expiresAt.toISOString(),
       is_active: true
@@ -131,8 +180,6 @@ async function approveUser(telegramId: number, username: string | null, days: nu
 }
 
 async function revokeUser(telegramId: number): Promise<void> {
-  if (!supabase) return;
-  
   await supabase
     .from('telegram_users')
     .update({ is_active: false })
@@ -144,8 +191,8 @@ async function getAccessToken(): Promise<string | null> {
   const credentials = await getSetting('microsoft_credentials');
   if (!credentials?.refresh_token) return null;
   
-  const clientId = MS_CLIENT_ID || credentials.client_id;
-  const clientSecret = MS_CLIENT_SECRET || credentials.client_secret;
+  const clientId = config.ms_client_id || credentials.client_id;
+  const clientSecret = config.ms_client_secret || credentials.client_secret;
   
   if (!clientId || !clientSecret) return null;
   
@@ -212,7 +259,6 @@ function formatEmail(email: any): string {
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from?.id || 0;
-  const username = msg.from?.username || null;
   
   const isApproved = await isApprovedUser(userId);
   
@@ -240,7 +286,7 @@ bot.onText(/\/start/, async (msg) => {
     welcomeText += `User ID kamu: <code>${userId}</code>`;
   }
   
-  if (SHEERID_PROGRAM_ID) {
+  if (config.sheerid_program_id) {
     welcomeText += `\n\n/verify - Verifikasi militer`;
   }
   
@@ -250,12 +296,12 @@ bot.onText(/\/start/, async (msg) => {
 bot.onText(/\/verify/, async (msg) => {
   const chatId = msg.chat.id;
   
-  if (!SHEERID_PROGRAM_ID) {
+  if (!config.sheerid_program_id) {
     await bot.sendMessage(chatId, '❌ Verifikasi militer tidak dikonfigurasi.');
     return;
   }
   
-  const verifyUrl = `https://verify.sheerid.com/${SHEERID_PROGRAM_ID}`;
+  const verifyUrl = `https://verify.sheerid.com/${config.sheerid_program_id}`;
   await bot.sendMessage(
     chatId,
     `🎖️ <b>Verifikasi Militer</b>\n\nKlik link berikut untuk verifikasi:\n${verifyUrl}`,
@@ -269,11 +315,6 @@ bot.onText(/\/status/, async (msg) => {
   
   if (isOwner(userId)) {
     await bot.sendMessage(chatId, '👑 Kamu adalah Owner - akses penuh!');
-    return;
-  }
-  
-  if (!supabase) {
-    await bot.sendMessage(chatId, '❌ Database tidak terhubung.');
     return;
   }
   
@@ -428,6 +469,51 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   await bot.sendMessage(chatId, `✅ Broadcast terkirim ke ${sent}/${users.length} users.`);
 });
 
+bot.onText(/\/setclient (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id || 0;
+  
+  if (!isOwner(userId)) {
+    await bot.sendMessage(chatId, '❌ Hanya owner.');
+    return;
+  }
+  
+  const clientId = match?.[1];
+  const current = await getSetting('microsoft_credentials') || {};
+  await setSetting('microsoft_credentials', { ...current, client_id: clientId });
+  await bot.sendMessage(chatId, '✅ MS Client ID tersimpan.');
+});
+
+bot.onText(/\/setsecret (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id || 0;
+  
+  if (!isOwner(userId)) {
+    await bot.sendMessage(chatId, '❌ Hanya owner.');
+    return;
+  }
+  
+  const secret = match?.[1];
+  const current = await getSetting('microsoft_credentials') || {};
+  await setSetting('microsoft_credentials', { ...current, client_secret: secret });
+  await bot.sendMessage(chatId, '✅ MS Client Secret tersimpan.');
+});
+
+bot.onText(/\/setrefresh (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id || 0;
+  
+  if (!isOwner(userId)) {
+    await bot.sendMessage(chatId, '❌ Hanya owner.');
+    return;
+  }
+  
+  const token = match?.[1];
+  const current = await getSetting('microsoft_credentials') || {};
+  await setSetting('microsoft_credentials', { ...current, refresh_token: token });
+  await bot.sendMessage(chatId, '✅ MS Refresh Token tersimpan.');
+});
+
 bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
   
@@ -450,6 +536,10 @@ bot.on('polling_error', (error) => {
 });
 
 // Startup message
-console.log('✅ Bot is running!');
-console.log(`👤 Owner ID: ${OWNER_ID}`);
-console.log(`📡 Supabase: ${supabase ? 'Connected' : 'Not configured'}`);
+console.log('═══════════════════════════════════════════');
+console.log('🤖 BOT STARTED SUCCESSFULLY!');
+console.log('═══════════════════════════════════════════');
+console.log(`👤 Owner ID: ${config.owner_id}`);
+console.log('📡 Database: Connected');
+console.log('📨 Polling: Active');
+console.log('═══════════════════════════════════════════');
