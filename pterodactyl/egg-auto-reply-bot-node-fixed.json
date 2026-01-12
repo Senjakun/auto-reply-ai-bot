@@ -1,0 +1,105 @@
+{
+  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-01-12T00:00:00+00:00",
+  "name": "Auto Reply AI Bot (Node Egg - Fixed)",
+  "author": "lovable@local",
+  "description": "Fix untuk egg Node generic: jalankan bot dari folder 'bot' tanpa bug /usr/local/bin/cd, plus auto npm install + build.",
+  "features": ["nodejs"],
+  "docker_images": {
+    "ghcr.io/parkervcp/yolks:nodejs_23": "ghcr.io/parkervcp/yolks:nodejs_23",
+    "ghcr.io/parkervcp/yolks:nodejs_22": "ghcr.io/parkervcp/yolks:nodejs_22",
+    "ghcr.io/parkervcp/yolks:nodejs_21": "ghcr.io/parkervcp/yolks:nodejs_21",
+    "ghcr.io/parkervcp/yolks:nodejs_20": "ghcr.io/parkervcp/yolks:nodejs_20"
+  },
+  "file_denylist": [],
+  "startup": "cd /home/container && if [[ -d .git ]] && [[ ${AUTO_UPDATE} == \"1\" ]]; then git pull; fi; cd ${WORKDIR:-bot}; if [ -f package.json ]; then /usr/local/bin/npm install; fi; if [[ ! -d dist ]] && [ -f tsconfig.json ]; then /usr/local/bin/npm run build; fi; ${CMD_RUN:-npm start};",
+  "config": {
+    "files": "{}",
+    "startup": "{\r\n    \"done\": \"running\"\r\n}",
+    "logs": "{}",
+    "stop": "^^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# Generic NodeJS Installer (clone repo)\n# Server Files: /mnt/server\n\napt update\napt install -y git curl\n\nmkdir -p /mnt/server\ncd /mnt/server\n\nif [ \"${USER_UPLOAD}\" == \"true\" ] || [ \"${USER_UPLOAD}\" == \"1\" ]; then\n  echo -e \"USER_UPLOAD enabled: skipping install script.\"\n  exit 0\nfi\n\n# Append .git if missing\nif [[ ${GIT_ADDRESS} != *.git ]]; then\n  GIT_ADDRESS=${GIT_ADDRESS}.git\nfi\n\nif [ -z \"${USERNAME}\" ] && [ -z \"${ACCESS_TOKEN}\" ]; then\n  echo -e \"using anon git clone\"\nelse\n  GIT_ADDRESS=\"https://${USERNAME}:${ACCESS_TOKEN}@$(echo -e ${GIT_ADDRESS} | cut -d/ -f3-)\"\nfi\n\nif [ \"$(ls -A /mnt/server)\" ]; then\n  echo -e \"/mnt/server not empty.\"\n  if [ -d .git ] && [ -f .git/config ]; then\n    ORIGIN=$(git config --get remote.origin.url)\n    if [ \"${ORIGIN}\" == \"${GIT_ADDRESS}\" ]; then\n      echo \"pulling latest\"\n      git pull\n    else\n      echo \"repo mismatch, not touching existing files\"\n      exit 10\n    fi\n  else\n    echo \"no git config found, not touching existing files\"\n    exit 10\n  fi\nelse\n  echo -e \"/mnt/server empty, cloning...\"\n  if [ -z ${BRANCH} ]; then\n    git clone ${GIT_ADDRESS} .\n  else\n    git clone --single-branch --branch ${BRANCH} ${GIT_ADDRESS} .\n  fi\nfi\n\n# Install dependencies in bot folder (default)\ncd /mnt/server/${WORKDIR:-bot} || exit 0\nif [ -f package.json ]; then\n  /usr/local/bin/npm install\nfi\n\necho -e \"install complete\"\nexit 0\n",
+      "container": "ghcr.io/parkervcp/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Git Repo Address",
+      "description": "Git repo untuk di-clone. Contoh: https://github.com/user/repo",
+      "env_variable": "GIT_ADDRESS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Install Branch",
+      "description": "Branch yang mau di-clone (kosongkan untuk default).",
+      "env_variable": "BRANCH",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Git Username",
+      "description": "Username untuk repo private (opsional).",
+      "env_variable": "USERNAME",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Git Access Token",
+      "description": "Token/PAT untuk repo private (opsional).",
+      "env_variable": "ACCESS_TOKEN",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Update",
+      "description": "Kalau 1, server akan git pull saat start (kalau ada .git).",
+      "env_variable": "AUTO_UPDATE",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:0,1",
+      "field_type": "text"
+    },
+    {
+      "name": "Workdir",
+      "description": "Folder aplikasi Node (default: bot).",
+      "env_variable": "WORKDIR",
+      "default_value": "bot",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string",
+      "field_type": "text"
+    },
+    {
+      "name": "Command Run",
+      "description": "Command start (JANGAN pakai 'cd ...', sudah otomatis). Contoh: npm start",
+      "env_variable": "CMD_RUN",
+      "default_value": "npm start",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string",
+      "field_type": "text"
+    }
+  ]
+}
